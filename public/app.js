@@ -82,7 +82,7 @@
       vga_bios: { url: config.vgaBios || "assets/v86/vgabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: config.diskImage || "assets/debian-trixie.img", async: config.asyncDisk !== false },
+      hda: { url: config.diskImage || "assets/alpine-linux.img", async: config.asyncDisk !== false },
       cmdline: config.cmdline || "root=/dev/sda rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0",
       disable_mouse: true,
       disable_speaker: true,

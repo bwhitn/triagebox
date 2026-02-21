@@ -1,15 +1,19 @@
-FROM --platform=linux/386 i386/debian:trixie-slim
+FROM --platform=linux/386 alpine:3.20
 
-ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       bash \
-       initramfs-tools \
-       linux-image-686 \
-       procps \
-       util-linux \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    apk add --no-cache \
+      alpine-base \
+      mkinitfs \
+      util-linux \
+      procps-ng; \
+    if apk add --no-cache linux-lts; then \
+      kernel_flavor="lts"; \
+    else \
+      apk add --no-cache linux-virt; \
+      kernel_flavor="virt"; \
+    fi; \
+    kernel_release="$(ls /lib/modules | sort | tail -n 1)"; \
+    mkinitfs -F "base ide scsi virtio ext4" -k "${kernel_release}" -o "/boot/initramfs-${kernel_flavor}"
 
 COPY overlay/ /
 

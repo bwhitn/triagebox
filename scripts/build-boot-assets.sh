@@ -7,13 +7,13 @@ ASSETS_DIR="${ROOT_DIR}/public/assets"
 WORK_DIR="${ROOT_DIR}/.work/rootfs"
 EXPORT_DIR="${WORK_DIR}/export"
 
-ROOTFS_TAG="${ROOTFS_TAG:-nixbrowser-v86-trixie-rootfs}"
+ROOTFS_TAG="${ROOTFS_TAG:-nixbrowser-v86-alpine-rootfs}"
 PLATFORM="${PLATFORM:-linux/386}"
 EXTRA_MB="${EXTRA_MB:-512}"
 MIN_DISK_MB="${MIN_DISK_MB:-1024}"
 DOCKER_USE_SUDO="${DOCKER_USE_SUDO:-0}"
 
-DISK_IMAGE="${ASSETS_DIR}/debian-trixie.img"
+DISK_IMAGE="${ASSETS_DIR}/alpine-linux.img"
 VMLINUX_OUT="${ASSETS_DIR}/vmlinuz"
 INITRD_OUT="${ASSETS_DIR}/initrd.img"
 
@@ -39,7 +39,8 @@ docker_cmd() {
     fi
 }
 
-if ! docker_cmd info >/dev/null 2>&1; then
+docker_info_err=""
+if ! docker_info_err="$(docker_cmd info 2>&1 >/dev/null)"; then
     cat >&2 <<'ERR'
 Cannot access Docker daemon.
 
@@ -51,6 +52,11 @@ Or fix it permanently:
   sudo usermod -aG docker $USER
   newgrp docker
 ERR
+    if [[ -n "${docker_info_err}" ]]; then
+        echo "" >&2
+        echo "Docker error output:" >&2
+        echo "${docker_info_err}" >&2
+    fi
     exit 1
 fi
 
@@ -72,8 +78,8 @@ docker_cmd export "${cid}" | tar -x -C "${EXPORT_DIR}" --exclude='dev/*' --exclu
 mkdir -p "${EXPORT_DIR}/dev" "${EXPORT_DIR}/proc" "${EXPORT_DIR}/sys" "${EXPORT_DIR}/run" "${EXPORT_DIR}/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp"
 
-VMLINUX_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f -name 'vmlinuz-*' | sort | tail -n 1)"
-INITRD_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f -name 'initrd.img-*' | sort | tail -n 1)"
+VMLINUX_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f \( -name 'vmlinuz-*' -o -name 'vmlinuz' \) | sort | tail -n 1)"
+INITRD_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f \( -name 'initrd.img-*' -o -name 'initrd*' -o -name 'initramfs-*' -o -name 'initramfs*' \) | sort | tail -n 1)"
 
 if [[ -z "${VMLINUX_PATH}" || -z "${INITRD_PATH}" ]]; then
     echo "Unable to find kernel/initrd in ${EXPORT_DIR}/boot" >&2
