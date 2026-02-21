@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Debian Trixie v86</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <h1>Debian Trixie v86 Test Rig</h1>
+
+      <section class="panel">
+        <div class="controls">
+          <button id="start">Start</button>
+          <button id="stop">Stop</button>
+          <button id="restart">Restart</button>
+          <button id="clear-serial">Clear Serial</button>
+          <button id="dump-profile">Dump Instruction Profile</button>
+        </div>
+        <p id="status">status: idle</p>
+        <p id="ips">instructions/sec: n/a</p>
+      </section>
+
+      <section class="panel">
+        <h2>Serial Console</h2>
+        <p>Click inside the serial console and type to interact with the guest shell.</p>
+        <textarea id="serial" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
+      </section>
+
+      <section class="panel">
+        <h2>VGA Output</h2>
+        <div id="screen_container">
+          <div id="screen"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Instruction Profile</h2>
+        <pre id="profile"></pre>
+      </section>
+    </main>
+
+    <script src="assets/v86/libv86.js"></script>
+    <script src="vm-config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+.work/
+public/assets/*
+!public/assets/.gitkeep
