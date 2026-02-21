@@ -24,7 +24,7 @@ need_cmd() {
     }
 }
 
-for cmd in docker tar find sort awk du cp truncate mke2fs; do
+for cmd in docker tar find sort awk du cp truncate mke2fs grep chmod; do
     need_cmd "$cmd"
 done
 if [[ "${DOCKER_USE_SUDO}" == "1" ]]; then
@@ -77,6 +77,13 @@ trap cleanup EXIT
 docker_cmd export "${cid}" | tar -x -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
 mkdir -p "${EXPORT_DIR}/dev" "${EXPORT_DIR}/proc" "${EXPORT_DIR}/sys" "${EXPORT_DIR}/run" "${EXPORT_DIR}/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp"
+
+# Some minimal distros include execute-only helper binaries (for example /bin/bbsuid).
+# mke2fs -d reads files as the invoking user, so unreadable files must be fixed in staging.
+if find "${EXPORT_DIR}" -type f ! -readable -print -quit | grep -q .; then
+    echo "Normalizing unreadable files in export tree for mke2fs"
+    find "${EXPORT_DIR}" -type f ! -readable -exec chmod u+r {} +
+fi
 
 VMLINUX_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f \( -name 'vmlinuz-*' -o -name 'vmlinuz' \) | sort | tail -n 1)"
 INITRD_PATH="$(find "${EXPORT_DIR}/boot" -maxdepth 1 -type f \( -name 'initrd.img-*' -o -name 'initrd*' -o -name 'initramfs-*' -o -name 'initramfs*' \) | sort | tail -n 1)"

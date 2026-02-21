@@ -6,11 +6,13 @@ RUN set -eux; \
       mkinitfs \
       util-linux \
       procps-ng; \
-    if apk add --no-cache linux-lts; then \
-      kernel_flavor="lts"; \
-    else \
-      apk add --no-cache linux-virt; \
+    apk del --no-cache busybox-suid || true; \
+    rm -f /bin/bbsuid; \
+    if apk add --no-cache linux-virt; then \
       kernel_flavor="virt"; \
+    else \
+      apk add --no-cache linux-lts; \
+      kernel_flavor="lts"; \
     fi; \
     kernel_release="$(ls /lib/modules | sort | tail -n 1)"; \
     mkinitfs -F "base ide scsi virtio ext4" -k "${kernel_release}" -o "/boot/initramfs-${kernel_flavor}"

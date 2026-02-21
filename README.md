@@ -111,4 +111,5 @@ In the web UI:
 
 - v86 currently exposes a single emulated CPU in standard builds; a true dual-core guest is not currently configurable here.
 - No networking is configured (`network_relay_url` omitted), and no floppy/CD images are attached.
-- The Alpine rootfs build prefers `linux-lts` and falls back to `linux-virt` if needed for the selected architecture.
+- The Alpine rootfs build prefers `linux-virt` (smaller footprint) and falls back to `linux-lts` if needed for the selected architecture.
+- The rootfs build removes Alpine `busybox-suid` (`/bin/bbsuid`) to avoid ext4 image population failures in unprivileged `mke2fs -d` runs.
