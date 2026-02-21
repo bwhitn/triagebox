@@ -42,6 +42,19 @@ This does:
 3. Export rootfs and create `public/assets/debian-trixie.img`
 4. Copy kernel/initrd to `public/assets/vmlinuz` and `public/assets/initrd.img`
 
+If Docker socket permissions fail, run with sudo mode:
+
+```bash
+DOCKER_USE_SUDO=1 make build
+```
+
+Then optionally fix permanently (so sudo mode is not needed):
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
 ## Serve for testing
 
 ### Local host server
@@ -56,6 +69,12 @@ Open `http://localhost:8080`.
 
 ```bash
 make docker-serve
+```
+
+If needed:
+
+```bash
+DOCKER_USE_SUDO=1 make docker-serve
 ```
 
 Open `http://localhost:8080`.

@@ -11,6 +11,7 @@ ROOTFS_TAG="${ROOTFS_TAG:-nixbrowser-v86-trixie-rootfs}"
 PLATFORM="${PLATFORM:-linux/386}"
 EXTRA_MB="${EXTRA_MB:-512}"
 MIN_DISK_MB="${MIN_DISK_MB:-1024}"
+DOCKER_USE_SUDO="${DOCKER_USE_SUDO:-0}"
 
 DISK_IMAGE="${ASSETS_DIR}/debian-trixie.img"
 VMLINUX_OUT="${ASSETS_DIR}/vmlinuz"
@@ -26,22 +27,48 @@ need_cmd() {
 for cmd in docker tar find sort awk du cp truncate mke2fs; do
     need_cmd "$cmd"
 done
+if [[ "${DOCKER_USE_SUDO}" == "1" ]]; then
+    need_cmd sudo
+fi
+
+docker_cmd() {
+    if [[ "${DOCKER_USE_SUDO}" == "1" ]]; then
+        sudo docker "$@"
+    else
+        docker "$@"
+    fi
+}
+
+if ! docker_cmd info >/dev/null 2>&1; then
+    cat >&2 <<'ERR'
+Cannot access Docker daemon.
+
+If your user is not in the docker group, use one of:
+  DOCKER_USE_SUDO=1 make build-disk
+  DOCKER_USE_SUDO=1 make build
+
+Or fix it permanently:
+  sudo usermod -aG docker $USER
+  newgrp docker
+ERR
+    exit 1
+fi
 
 echo "[1/4] Building rootfs image (${PLATFORM})"
-docker build --platform "${PLATFORM}" -t "${ROOTFS_TAG}" "${ROOTFS_DIR}"
+docker_cmd build --platform "${PLATFORM}" -t "${ROOTFS_TAG}" "${ROOTFS_DIR}"
 
 echo "[2/4] Exporting container filesystem"
 rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}" "${ASSETS_DIR}"
 
-cid="$(docker create --platform "${PLATFORM}" "${ROOTFS_TAG}")"
+cid="$(docker_cmd create --platform "${PLATFORM}" "${ROOTFS_TAG}")"
 cleanup() {
-    docker rm -f "${cid}" >/dev/null 2>&1 || true
+    docker_cmd rm -f "${cid}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # Device nodes from docker export are not needed and may fail to extract without root.
-docker export "${cid}" | tar -x -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
+docker_cmd export "${cid}" | tar -x -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
 mkdir -p "${EXPORT_DIR}/dev" "${EXPORT_DIR}/proc" "${EXPORT_DIR}/sys" "${EXPORT_DIR}/run" "${EXPORT_DIR}/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp"
 
