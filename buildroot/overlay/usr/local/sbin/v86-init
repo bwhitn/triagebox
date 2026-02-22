@@ -10,7 +10,7 @@ mount -t tmpfs tmpfs /run 2>/dev/null || true
 chmod 1777 /tmp 2>/dev/null || true
 
 echo ""
-echo "Alpine Linux running on v86"
+echo "Buildroot Linux running on v86"
 echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."
 echo ""
 

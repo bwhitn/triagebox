@@ -8,7 +8,7 @@ fetch-v86:
 	./scripts/fetch-v86-assets.sh
 
 build-disk:
-	./scripts/build-boot-assets.sh
+	./scripts/build-boot-assets-buildroot.sh
 	./scripts/write-build-config.sh
 
 write-build-config:
@@ -28,7 +28,7 @@ docker-serve:
 
 clean:
 	rm -rf .work
-	rm -f public/assets/alpine-linux.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt
+	rm -f public/assets/buildroot-linux.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt
 	rm -rf public/assets/v86 public/assets/xterm
 	mkdir -p public/assets
 	touch public/assets/.gitkeep

@@ -6,7 +6,7 @@ window.V86_VM_CONFIG = {
   wasmPath: "assets/v86/v86.wasm",
   bzImage: "assets/vmlinuz",
   initrd: "assets/initrd.img",
-  diskImage: "assets/alpine-linux.img",
+  diskImage: "assets/buildroot-linux.img",
   // Optional override; if omitted, app.js chooses based on enableSerial/build flag.
   cmdline: "",
   enableSerial: true,

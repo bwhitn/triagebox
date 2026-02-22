@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_PATH="${1:-public/assets/alpine-linux.img}"
+IMAGE_PATH="${1:-public/assets/buildroot-linux.img}"
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -30,7 +30,7 @@ read -r block_count free_blocks reserved_blocks block_size < <(
 )
 
 if [[ -z "${block_count:-}" || -z "${free_blocks:-}" || -z "${block_size:-}" ]]; then
-    echo "Unable to parse ext4 metadata from: ${IMAGE_PATH}" >&2
+    echo "Unable to parse ext filesystem metadata from: ${IMAGE_PATH}" >&2
     exit 1
 fi
 
@@ -56,4 +56,3 @@ echo "fs_bytes_reserved=${reserved_bytes}"
 echo "fs_mib_total=$(awk "BEGIN {printf \"%.2f\", ${total_bytes}/1048576}")"
 echo "fs_mib_used=$(awk "BEGIN {printf \"%.2f\", ${used_bytes}/1048576}")"
 echo "fs_mib_free=$(awk "BEGIN {printf \"%.2f\", ${free_bytes}/1048576}")"
-

@@ -1,0 +1,17 @@
+config BR2_PACKAGE_PYTHON_BINARY_REFINERY
+	bool "python-binary-refinery"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_i386
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	help
+	  Binary Refinery is a toolkit for byte-level malware and payload
+	  analysis/transformation.
+	  This package installs Binary Refinery and the full upstream
+	  optional dependency set ([all]) from Python wheels targeting
+	  i686 manylinux/glibc, including LIEF.
+
+	  https://github.com/binref/refinery
+
+comment "python-binary-refinery needs an i386 glibc toolchain"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on !BR2_i386 || !BR2_TOOLCHAIN_USES_GLIBC

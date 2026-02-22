@@ -1,28 +1,28 @@
-# Alpine Linux v86 Environment
+# Buildroot v86 Environment
 
-This repository provides a minimal v86 setup with:
+This repository provides a minimal Buildroot-based v86 setup with:
 
-- Alpine Linux guest root filesystem built from `alpine:3.20` (`linux/386`)
+- Buildroot guest root filesystem (`qemu_x86_defconfig`)
 - No audio, no CD-ROM image, no floppy image, no networking relay, and mouse disabled
-- Serial console disabled by default (can be enabled at build time)
+- Serial console enabled by default (can be disabled at build time)
 - 512MB RAM default
 - Lightweight runtime throughput display (`instructions/sec`)
 
 ## What is included
 
-- `rootfs/Dockerfile`: defines the boot disk content (Alpine based)
-- `rootfs/overlay/`: files copied into the guest filesystem
-- `scripts/build-boot-assets.sh`: builds guest artifacts (`alpine-linux.img`, `vmlinuz`, `initrd.img`)
-- `scripts/write-build-config.sh`: writes build-time UI flags (for example serial enablement)
-- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, VGA BIOS, and xterm.js assets
+- `buildroot/overlay/`: files copied into the guest filesystem
+- `buildroot-external/`: custom Buildroot package metadata (includes `python-binary-refinery`)
+- `scripts/build-boot-assets-buildroot.sh`: builds guest artifacts (`buildroot-linux.img`, `vmlinuz`, `initrd.img`)
+- `scripts/write-build-config.sh`: writes build-time UI flags
+- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, VGA BIOS, and xterm assets
 - `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
 
 ## Prerequisites
 
-- Docker
-- `mke2fs` (from `e2fsprogs`)
-- `python3` (only for local non-docker serving)
+- `curl`, `tar`, `make`, `gcc`, `patch`, `bison`, `flex`, `perl`, `rsync`, `bc`
+- `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
+- `python3` and `python3-pip` (pip is used for early binary-refinery wheel prefetch; set `PREFETCH_REFINERY_WHEELS=0` to skip)
 
 ## Build VM assets
 
@@ -30,106 +30,91 @@ This repository provides a minimal v86 setup with:
 make build
 ```
 
-If needed, override architecture with:
-
-```bash
-PLATFORM=linux/386 make build
-```
-
 This does:
 
-1. Download v86 runtime assets to `public/assets/v86/`
-   and terminal assets to `public/assets/xterm/`
-2. Build Alpine rootfs image from `rootfs/Dockerfile`
-3. Export rootfs and create `public/assets/alpine-linux.img`
-4. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
-5. Write `public/build-config.js` with build-time flags
+1. Download v86 runtime assets to `public/assets/v86/` and terminal assets to `public/assets/xterm/`
+2. Build Buildroot kernel/rootfs output
+3. Generate Buildroot legal-info and archive it as `public/assets/buildroot-legal-info.tar.gz`
+4. Create `public/assets/buildroot-linux.img` (ext2)
+5. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
+6. Write `public/build-config.js`
 
-Default disk sizing targets a compact image:
-
-- `MIN_DISK_MB=512`
-- `EXTRA_MB=96` (added to exported rootfs size before applying minimum)
-- `PRUNE_ROOTFS=1` (removes kernel modules/firmware/docs from runtime rootfs after extracting boot artifacts)
-- `AUTO_SHRINK=1` (enabled by default after filesystem creation)
-- `SHRINK_PAD_MB=2` (extra free slack retained)
-- `SHRINK_MIN_MB=0` by default (no forced minimum after shrink)
-- `MKINITFS_FEATURES="base ata scsi ext4"` by default (safe root-mount feature set)
-- transient files are cleaned before packing (for example `/tmp`, `/var/tmp`, `/var/cache`, `/var/log`)
-- pip/apk temporary artifacts are cleaned during build (`py3-pip` removed, pip cache/wheels purged, root cache dirs cleared)
-
-Rootfs package policy is allowlist-based:
-
-- only minimal boot requirements are always installed (`mkinitfs` + kernel package during build)
-- additional runtime tools are installed only if you list them in `rootfs/user-packages.txt`
-- one-off package additions can be passed with `USER_APK_PACKAGES`
-- Python pip packages can be installed at build time via `PYTHON_PIP_PACKAGES` (defaults to `binary-refinery`), then `py3-pip` is removed from the final image
-- `STRIP_TO_BUSYBOX=1` by default removes package-manager tooling (`apk`) from the final runtime image
-
-You can override explicitly for tighter control:
+Build just the disk/kernel/initrd artifacts:
 
 ```bash
+make build-disk
+```
+
+## Build knobs
+
+- `BUILDROOT_VERSION` (default `2025.11.1`)
+- `BUILDROOT_ARCHIVE_URL` (default points to buildroot.org tarball for that version)
+- `BUILDROOT_DEFCONFIG` (default `qemu_x86_defconfig`)
+- `BUILDROOT_JOBS` (default `nproc`)
+- `BUILDROOT_PRIMARY_SITE` (default `https://sources.buildroot.net`)
+- `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
+- x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
+- Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
+- `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)
+  `optimized`: `-O3` + LTO for best runtime speed
+  `fast`: `-O0`, LTO off for shorter build times
+- `PREFETCH_DOWNLOADS` (default `1`; runs `make source` before compile)
+- `PREFETCH_REFINERY_WHEELS` (default `1`; pre-downloads binary-refinery wheel deps early, requires local `python3 -m pip`)
+- `REFINERY_WHEELHOUSE_DIR` (default `.work/buildroot/dl/python-binary-refinery-wheelhouse`)
+- `REFINERY_WHEEL_PLATFORM_PRIMARY` (default `manylinux_2_28_i686`)
+- `REFINERY_WHEEL_PLATFORM_FALLBACK` (default `manylinux2014_i686`)
+- `REFINERY_WHEEL_STRICT` (default `1`; build fails if any optional dependency cannot be resolved for i686)
+- `REFINERY_SDIST_FALLBACK` (default `1`; if wheel is missing, try sdist and keep it only when a universal `*-none-any.whl` can be built)
+- `REFINERY_SDIST_BUILD_JOBS` (default `BUILDROOT_JOBS`; parallelism for sdist fallback wheel builds)
+- `REFINERY_MISSING_WHEELS_REPORT` (default `public/assets/binary-refinery-missing-wheels.txt`)
+- `REFINERY_BUILDROOT_PROVIDED_REPORT` (default `public/assets/binary-refinery-buildroot-provided.txt`)
+- `BUILD_LEGAL_INFO` (default `1`; runs `make legal-info` and publishes archive)
+- `LEGAL_INFO_ARCHIVE` (default `public/assets/buildroot-legal-info.tar.gz`)
+- Python 3 is always included
+- binary-refinery is always included
+- `BINARY_REFINERY_VERSION` (default `0.9.26`)
+- `PYTHON_LIEF_VERSION` (default `0.17.3`)
+- `DISK_MB` (fixed final pre-shrink size; optional)
+- `EXTRA_MB` (default `32`)
+- `MIN_DISK_MB` (default `64`)
+- `AUTO_SHRINK` (default `1`)
+- `SHRINK_PAD_MB` (default `2`)
+- `SHRINK_MIN_MB` (default `0`)
+- `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
+
+Binary-refinery note:
+
+- The Buildroot package installs `binary-refinery` plus the full upstream Python optional set (`[all]`), including `python-lief`.
+- Optional deps are resolved in two phases for i686:
+  1) If a matching Buildroot `python-*` package exists, it is enabled and built for target.
+  2) Remaining deps are resolved via pip wheel prefetch (`manylinux_2_28_i686` plus fallback `manylinux2014_i686`), with optional sdist fallback to universal wheels only.
+- If an auto-mapped Buildroot package is unavailable for the active config/arch after `olddefconfig`, that requirement is automatically pushed back to pip resolution.
+- Some optional deps do not publish i686 Linux wheels for newer Python ABIs. With `REFINERY_SDIST_FALLBACK=1`, build tries sdist next and only accepts universal wheels (`*-none-any.whl`) to avoid host-arch contamination.
+- With `REFINERY_WHEEL_STRICT=1` (default), unresolved items fail the build. Set `REFINERY_WHEEL_STRICT=0` only if you explicitly want best-effort mode.
+- Binary-refinery does not have one fixed built-in list of required external non-Python executables.
+- If you use the `run` unit to call host tools, install those command-line tools in the image.
+
+Examples:
+
+```bash
+BUILDROOT_VERSION=2025.11.1 make build-disk
 DISK_MB=512 make build-disk
-```
-
-Disable auto-shrink if you want to keep the initial size:
-
-```bash
 AUTO_SHRINK=0 make build-disk
-```
-
-Keep full rootfs content (no pruning):
-
-```bash
-PRUNE_ROOTFS=0 make build-disk
-```
-
-Keep a final minimum only when you want one:
-
-```bash
-SHRINK_MIN_MB=512 make build-disk
-```
-
-Install one-off extra packages for a build:
-
-```bash
-USER_APK_PACKAGES="curl strace" make build-disk
-```
-
-Override pip-installed Python tools for a build:
-
-```bash
-PYTHON_PIP_PACKAGES="binary-refinery" make build-disk
-```
-
-Disable pip-installed Python tools:
-
-```bash
-PYTHON_PIP_PACKAGES="" make build-disk
-```
-
-Keep `apk` tooling in the runtime image (disable busybox-only strip):
-
-```bash
-STRIP_TO_BUSYBOX=0 make build-disk
-```
-
-If root-device probing ever fails on your host/browser combo, add SCSI support back:
-
-```bash
-MKINITFS_FEATURES="base ata scsi ext4" make build-disk
-```
-
-If Docker socket permissions fail, run with sudo mode:
-
-```bash
-DOCKER_USE_SUDO=1 make build
-```
-
-Then optionally fix permanently (so sudo mode is not needed):
-
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
+SHRINK_PAD_MB=1 SHRINK_MIN_MB=0 make build-disk
+BUILDROOT_PRIMARY_SITE=https://sources.buildroot.net BUILDROOT_PRIMARY_SITE_ONLY=1 make build-disk
+BUILD_PROFILE=optimized make build-disk
+BUILD_PROFILE=fast make build-disk
+PREFETCH_DOWNLOADS=0 make build-disk
+PREFETCH_REFINERY_WHEELS=0 make build-disk
+REFINERY_SDIST_FALLBACK=0 make build-disk
+REFINERY_SDIST_BUILD_JOBS=8 make build-disk
+REFINERY_WHEEL_PLATFORM_PRIMARY=manylinux_2_28_i686 REFINERY_WHEEL_PLATFORM_FALLBACK=manylinux2014_i686 make build-disk
+REFINERY_WHEEL_STRICT=1 make build-disk
+REFINERY_WHEEL_STRICT=0 make build-disk
+BUILD_LEGAL_INFO=0 make build-disk
+BINARY_REFINERY_VERSION=0.9.26 make build-disk
+PYTHON_LIEF_VERSION=0.17.3 make build-disk
+ENABLE_SERIAL=0 make write-build-config
 ```
 
 ## Serve for testing
@@ -141,10 +126,9 @@ make serve
 ```
 
 Open `http://localhost:8080`.
-
-This uses a gzip-capable static server that can apply `Content-Encoding: gzip`
-to selected file extensions (including `.img`, `.bin`, `.wasm`) when the browser
-advertises gzip support.
+Download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
+If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
+Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 
 ### Docker server (Debian trixie-slim)
 
@@ -152,49 +136,24 @@ advertises gzip support.
 make docker-serve
 ```
 
-If needed:
+If Docker socket permissions fail:
 
 ```bash
 DOCKER_USE_SUDO=1 make docker-serve
 ```
 
-Open `http://localhost:8080`.
-
-Compression server environment knobs (for both local and docker):
-
-- `COMPRESS_EXT` (comma-separated extensions, default includes `.img,.bin,.wasm,.js,.css`)
-- `COMPRESS_MIN_BYTES` (default `1024`)
-- `COMPRESS_LEVEL` (default `6`)
-
-Example:
-
-```bash
-COMPRESS_MIN_BYTES=1 COMPRESS_LEVEL=9 make serve
-```
-
 ## Configure boot disk changes
 
-Edit either:
+Edit:
 
-- `rootfs/Dockerfile` (boot package policy and kernel/initramfs behavior)
-- `rootfs/user-packages.txt` (allowlisted runtime tools, one package per line)
-- `rootfs/overlay/` (files/scripts/config copied into guest filesystem)
+- `buildroot/overlay/` (files/scripts/config copied into guest rootfs)
+- `scripts/build-boot-assets-buildroot.sh` (build behavior)
 
-Then rebuild just the guest artifacts:
+Then rebuild:
 
 ```bash
 make build-disk
 ```
-
-Enable serial console for a build:
-
-```bash
-ENABLE_SERIAL=1 make build-disk
-```
-
-When serial is enabled, the UI uses xterm.js (if assets are present) for proper
-terminal behavior with full-screen programs like `top`. If xterm assets are
-missing, it falls back to a textarea.
 
 ## Check disk usage
 
@@ -202,38 +161,24 @@ missing, it falls back to a textarea.
 make disk-usage
 ```
 
-Or on any image path:
+Or for any image path:
 
 ```bash
-./scripts/disk-usage.sh public/assets/alpine-linux.img
+./scripts/disk-usage.sh public/assets/buildroot-linux.img
 ```
 
-## Shrink an existing image after build
+## Shrink an existing image manually
 
-The build process already auto-shrinks by default, but you can also run shrink manually.
-
-Default shrink leaves 32MB free slack:
+The build already auto-shrinks by default. Manual run:
 
 ```bash
 make shrink-disk
 ```
 
-Tune slack space (example: 16MB):
+Tune shrink slack:
 
 ```bash
-PAD_MB=16 ./scripts/shrink-image.sh public/assets/alpine-linux.img
-```
-
-Enforce a minimum output size (example: 512MB):
-
-```bash
-MIN_MB=512 ./scripts/shrink-image.sh public/assets/alpine-linux.img
-```
-
-Create a backup before shrinking:
-
-```bash
-BACKUP_PATH=public/assets/alpine-linux.pre-shrink.img make shrink-disk
+PAD_MB=8 ./scripts/shrink-image.sh public/assets/buildroot-linux.img
 ```
 
 ## Runtime tuning
@@ -241,14 +186,13 @@ BACKUP_PATH=public/assets/alpine-linux.pre-shrink.img make shrink-disk
 Edit `public/vm-config.js`:
 
 - `memoryMb` defaults to `512`
-- `cmdline` can override guest init behavior (left empty by default so app.js picks serial/non-serial defaults)
-- file paths for BIOS/kernel/initrd/disk image
+- `cmdline` override is optional (if empty, app.js uses defaults)
+- `rootFsType` is injected at build time as `ext2`
 - `enableSerial` defaults to `true` (build flag can override via `public/build-config.js`)
-- `asyncDisk` is opt-in and defaults to `false` for compatibility with simple static servers (such as `python3 -m http.server`). Set it to `true` only with a server that supports HTTP byte-range requests.
+- `asyncDisk` defaults to `false` unless your server supports HTTP byte ranges
 
 ## Notes
 
-- v86 currently exposes a single emulated CPU in standard builds; a true dual-core guest is not currently configurable here.
-- No networking is configured (`network_relay_url` omitted), and no floppy/CD images are attached.
-- The Alpine rootfs build prefers `linux-virt` (smaller footprint) and falls back to `linux-lts` if needed for the selected architecture.
-- The rootfs build removes Alpine `busybox-suid` (`/bin/bbsuid`) to avoid ext4 image population failures in unprivileged `mke2fs -d` runs.
+- v86 exposes a single emulated CPU in this setup.
+- No networking relay is configured.
+- No floppy/CD images are attached.

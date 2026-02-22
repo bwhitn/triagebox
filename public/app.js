@@ -414,10 +414,13 @@
       emulatorReadyResolve = resolve;
     });
 
-    const defaultCmdlineNoSerial = "root=LABEL=rootfs rootfstype=ext4 rw rootwait init=/usr/local/sbin/v86-init console=tty0";
+    const rootFsType = typeof config.rootFsType === "string" && config.rootFsType.trim().length > 0
+      ? config.rootFsType.trim()
+      : "ext4";
+    const defaultCmdlineNoSerial = `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=tty0`;
     const defaultCmdlineSerial = vgaEnabled
-      ? "root=LABEL=rootfs rootfstype=ext4 rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0"
-      : "root=LABEL=rootfs rootfstype=ext4 rw rootwait init=/usr/local/sbin/v86-init console=ttyS0";
+      ? `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0`
+      : `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=ttyS0`;
     const cmdline = typeof config.cmdline === "string" && config.cmdline.trim().length > 0
       ? config.cmdline
       : (serialEnabled ? defaultCmdlineSerial : defaultCmdlineNoSerial);
@@ -429,7 +432,7 @@
       vga_bios: { url: config.vgaBios || "assets/v86/vgabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: config.diskImage || "assets/alpine-linux.img", async: config.asyncDisk === true },
+      hda: { url: config.diskImage || "assets/buildroot-linux.img", async: config.asyncDisk === true },
       cmdline,
       disable_keyboard: !vgaEnabled,
       disable_mouse: !vgaEnabled,

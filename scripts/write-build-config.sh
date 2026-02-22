@@ -18,8 +18,10 @@ fi
 
 cat > "${OUT_FILE}" <<EOF
 window.V86_BUILD_CONFIG = {
-  enableSerial: ${serial_flag}
+  enableSerial: ${serial_flag},
+  rootFsType: "ext2",
+  rootfsFlavor: "buildroot"
 };
 EOF
 
-echo "Wrote ${OUT_FILE} (enableSerial=${serial_flag})"
+echo "Wrote ${OUT_FILE} (enableSerial=${serial_flag}, rootfsFlavor=buildroot, rootFsType=ext2)"
