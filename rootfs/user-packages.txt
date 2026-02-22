@@ -1,0 +1,8 @@
+# Optional allowlist for additional runtime tools in the guest rootfs.
+# One package name per line. Lines starting with # are ignored.
+#
+# Examples:
+# nano
+# curl
+# strace
+

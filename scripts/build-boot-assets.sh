@@ -12,8 +12,12 @@ PLATFORM="${PLATFORM:-linux/386}"
 EXTRA_MB="${EXTRA_MB:-96}"
 MIN_DISK_MB="${MIN_DISK_MB:-512}"
 DISK_MB="${DISK_MB:-}"
+MKINITFS_FEATURES="${MKINITFS_FEATURES:-base ata scsi ext4}"
+USER_APK_PACKAGES="${USER_APK_PACKAGES:-}"
+STRIP_TO_BUSYBOX="${STRIP_TO_BUSYBOX:-1}"
+PRUNE_ROOTFS="${PRUNE_ROOTFS:-1}"
 AUTO_SHRINK="${AUTO_SHRINK:-1}"
-SHRINK_PAD_MB="${SHRINK_PAD_MB:-32}"
+SHRINK_PAD_MB="${SHRINK_PAD_MB:-2}"
 SHRINK_MIN_MB="${SHRINK_MIN_MB:-0}"
 DOCKER_USE_SUDO="${DOCKER_USE_SUDO:-0}"
 
@@ -28,7 +32,7 @@ need_cmd() {
     }
 }
 
-for cmd in docker tar find sort awk du cp truncate mke2fs grep chmod stat; do
+for cmd in docker tar find sort awk du cp truncate mke2fs grep chmod stat rm; do
     need_cmd "$cmd"
 done
 if [[ "${DOCKER_USE_SUDO}" == "1" ]]; then
@@ -65,7 +69,13 @@ ERR
 fi
 
 echo "[1/5] Building rootfs image (${PLATFORM})"
-docker_cmd build --platform "${PLATFORM}" -t "${ROOTFS_TAG}" "${ROOTFS_DIR}"
+docker_cmd build \
+    --platform "${PLATFORM}" \
+    --build-arg "MKINITFS_FEATURES=${MKINITFS_FEATURES}" \
+    --build-arg "USER_APK_PACKAGES=${USER_APK_PACKAGES}" \
+    --build-arg "STRIP_TO_BUSYBOX=${STRIP_TO_BUSYBOX}" \
+    -t "${ROOTFS_TAG}" \
+    "${ROOTFS_DIR}"
 
 echo "[2/5] Exporting container filesystem"
 rm -rf "${EXPORT_DIR}"
@@ -99,6 +109,32 @@ fi
 
 cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
 cp "${INITRD_PATH}" "${INITRD_OUT}"
+
+if [[ "${PRUNE_ROOTFS}" == "1" ]]; then
+    echo "Pruning runtime rootfs content not needed in this VM profile"
+    rm -rf \
+        "${EXPORT_DIR}/boot" \
+        "${EXPORT_DIR}/lib/modules" \
+        "${EXPORT_DIR}/lib/firmware" \
+        "${EXPORT_DIR}/usr/lib/firmware" \
+        "${EXPORT_DIR}/usr/share/man" \
+        "${EXPORT_DIR}/usr/share/doc" \
+        "${EXPORT_DIR}/usr/share/info" \
+        "${EXPORT_DIR}/usr/share/locale" \
+        "${EXPORT_DIR}/var/cache/apk"
+elif [[ "${PRUNE_ROOTFS}" != "0" ]]; then
+    echo "PRUNE_ROOTFS must be 0 or 1 (got: ${PRUNE_ROOTFS})" >&2
+    exit 1
+fi
+
+echo "Cleaning transient files from export tree"
+for dir in tmp var/tmp var/cache var/log; do
+    if [[ -d "${EXPORT_DIR}/${dir}" ]]; then
+        find "${EXPORT_DIR}/${dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+done
+mkdir -p "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp"
+chmod 1777 "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp" || true
 
 echo "[3/5] Building ext4 disk image"
 rootfs_mb="$(du -sm "${EXPORT_DIR}" | awk '{print $1}')"

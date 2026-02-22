@@ -48,9 +48,19 @@ Default disk sizing targets a compact image:
 
 - `MIN_DISK_MB=512`
 - `EXTRA_MB=96` (added to exported rootfs size before applying minimum)
+- `PRUNE_ROOTFS=1` (removes kernel modules/firmware/docs from runtime rootfs after extracting boot artifacts)
 - `AUTO_SHRINK=1` (enabled by default after filesystem creation)
-- `SHRINK_PAD_MB=32` (extra free slack retained)
+- `SHRINK_PAD_MB=2` (extra free slack retained)
 - `SHRINK_MIN_MB=0` by default (no forced minimum after shrink)
+- `MKINITFS_FEATURES="base ata scsi ext4"` by default (safe root-mount feature set)
+- transient files are cleaned before packing (for example `/tmp`, `/var/tmp`, `/var/cache`, `/var/log`)
+
+Rootfs package policy is allowlist-based:
+
+- only minimal boot requirements are always installed (`mkinitfs` + kernel package during build)
+- additional runtime tools are installed only if you list them in `rootfs/user-packages.txt`
+- one-off package additions can be passed with `USER_APK_PACKAGES`
+- `STRIP_TO_BUSYBOX=1` by default removes package-manager tooling (`apk`) from the final runtime image
 
 You can override explicitly for tighter control:
 
@@ -64,10 +74,34 @@ Disable auto-shrink if you want to keep the initial size:
 AUTO_SHRINK=0 make build-disk
 ```
 
+Keep full rootfs content (no pruning):
+
+```bash
+PRUNE_ROOTFS=0 make build-disk
+```
+
 Keep a final minimum only when you want one:
 
 ```bash
 SHRINK_MIN_MB=512 make build-disk
+```
+
+Install one-off extra packages for a build:
+
+```bash
+USER_APK_PACKAGES="curl strace" make build-disk
+```
+
+Keep `apk` tooling in the runtime image (disable busybox-only strip):
+
+```bash
+STRIP_TO_BUSYBOX=0 make build-disk
+```
+
+If root-device probing ever fails on your host/browser combo, add SCSI support back:
+
+```bash
+MKINITFS_FEATURES="base ata scsi ext4" make build-disk
 ```
 
 If Docker socket permissions fail, run with sudo mode:
@@ -93,6 +127,10 @@ make serve
 
 Open `http://localhost:8080`.
 
+This uses a gzip-capable static server that can apply `Content-Encoding: gzip`
+to selected file extensions (including `.img`, `.bin`, `.wasm`) when the browser
+advertises gzip support.
+
 ### Docker server (Debian trixie-slim)
 
 ```bash
@@ -107,11 +145,24 @@ DOCKER_USE_SUDO=1 make docker-serve
 
 Open `http://localhost:8080`.
 
+Compression server environment knobs (for both local and docker):
+
+- `COMPRESS_EXT` (comma-separated extensions, default includes `.img,.bin,.wasm,.js,.css`)
+- `COMPRESS_MIN_BYTES` (default `1024`)
+- `COMPRESS_LEVEL` (default `6`)
+
+Example:
+
+```bash
+COMPRESS_MIN_BYTES=1 COMPRESS_LEVEL=9 make serve
+```
+
 ## Configure boot disk changes
 
 Edit either:
 
-- `rootfs/Dockerfile` (packages and kernel/initramfs behavior)
+- `rootfs/Dockerfile` (boot package policy and kernel/initramfs behavior)
+- `rootfs/user-packages.txt` (allowlisted runtime tools, one package per line)
 - `rootfs/overlay/` (files/scripts/config copied into guest filesystem)
 
 Then rebuild just the guest artifacts:
