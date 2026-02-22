@@ -50,9 +50,14 @@
       </section>
 
       <section class="panel" id="serial-panel">
-        <h2>Serial Console</h2>
+        <div class="panel-header">
+          <h2>Serial Console</h2>
+          <button type="button" id="serial-fullscreen">Fullscreen</button>
+        </div>
         <p id="serial-hint">Click inside the serial console and type to interact with the guest shell.</p>
-        <div id="serial-xterm"></div>
+        <div id="serial-xterm-wrap">
+          <div id="serial-xterm"></div>
+        </div>
       </section>
 
       <section class="panel" id="vga-panel">

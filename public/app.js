@@ -16,6 +16,7 @@
   const ipsEl = document.getElementById("ips");
   const serialPanelEl = document.getElementById("serial-panel");
   const serialHintEl = document.getElementById("serial-hint");
+  const serialXtermWrapEl = document.getElementById("serial-xterm-wrap");
   const serialXtermEl = document.getElementById("serial-xterm");
   const vgaPanelEl = document.getElementById("vga-panel");
   const specialKeyButtons = document.querySelectorAll("[data-special-key]");
@@ -25,6 +26,7 @@
   const stopBtn = document.getElementById("stop");
   const restartBtn = document.getElementById("restart");
   const clearSerialBtn = document.getElementById("clear-serial");
+  const serialFullscreenBtn = document.getElementById("serial-fullscreen");
   const downloadPanelEl = document.getElementById("download-panel");
   const downloadStatusEl = document.getElementById("download-status");
   const downloadProgressEl = document.getElementById("download-progress");
@@ -36,6 +38,9 @@
   let sampleTimer = null;
   let lastSampleTime = 0;
   let lastInstructionCount = 0;
+  let serialResizeObserver = null;
+  let serialResizeListenerBound = false;
+  let serialFitRaf = 0;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
@@ -77,6 +82,52 @@
 
   function setIps(text) {
     ipsEl.textContent = `instructions/sec: ${text}`;
+  }
+
+  function isSerialFullscreen() {
+    return !!serialXtermWrapEl && document.fullscreenElement === serialXtermWrapEl;
+  }
+
+  function updateSerialFullscreenButton() {
+    if (!serialFullscreenBtn) {
+      return;
+    }
+    serialFullscreenBtn.textContent = isSerialFullscreen() ? "Exit Fullscreen" : "Fullscreen";
+  }
+
+  async function enterSerialFullscreen() {
+    if (!serialXtermWrapEl) {
+      return;
+    }
+    const request = serialXtermWrapEl.requestFullscreen || serialXtermWrapEl.webkitRequestFullscreen;
+    if (typeof request !== "function") {
+      throw new Error("fullscreen api not supported in this browser");
+    }
+    await request.call(serialXtermWrapEl);
+  }
+
+  async function exitAnyFullscreen() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (typeof exit !== "function") {
+      throw new Error("fullscreen api not supported in this browser");
+    }
+    await exit.call(document);
+  }
+
+  async function toggleSerialFullscreen() {
+    try {
+      if (isSerialFullscreen()) {
+        await exitAnyFullscreen();
+      } else {
+        await enterSerialFullscreen();
+      }
+      updateSerialFullscreenButton();
+      scheduleSerialFit();
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setStatus(`error (${msg})`);
+      console.error(err);
+    }
   }
 
   function setDownloadVisible(visible) {
@@ -242,6 +293,63 @@
     sampleTimer = null;
   }
 
+  function fitSerialTerminal() {
+    if (!serialEnabled || !serialUseXterm || !serialXtermEl || !emulator?.serial_adapter?.term) {
+      return;
+    }
+
+    const term = emulator.serial_adapter.term;
+    const dims = term?._core?._renderService?.dimensions?.css;
+    const cellWidth = dims?.cell?.width || 0;
+    const cellHeight = dims?.cell?.height || 0;
+    const viewportWidth = serialXtermEl.clientWidth;
+    const viewportHeight = serialXtermEl.clientHeight;
+
+    if (cellWidth <= 0 || cellHeight <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+      return;
+    }
+
+    const cols = Math.max(20, Math.floor(viewportWidth / cellWidth));
+    const rows = Math.max(5, Math.floor(viewportHeight / cellHeight));
+
+    if (term.cols !== cols || term.rows !== rows) {
+      term.resize(cols, rows);
+    }
+  }
+
+  function scheduleSerialFit() {
+    if (serialFitRaf) {
+      cancelAnimationFrame(serialFitRaf);
+    }
+    serialFitRaf = requestAnimationFrame(() => {
+      serialFitRaf = 0;
+      fitSerialTerminal();
+    });
+  }
+
+  function setupSerialResizeHandling() {
+    if (!serialEnabled || !serialUseXterm || !serialXtermEl) {
+      return;
+    }
+
+    const observeTarget = serialXtermWrapEl || serialXtermEl;
+    if (!serialResizeObserver && typeof ResizeObserver === "function") {
+      serialResizeObserver = new ResizeObserver(() => {
+        scheduleSerialFit();
+      });
+      serialResizeObserver.observe(observeTarget);
+    }
+
+    if (!serialResizeListenerBound) {
+      window.addEventListener("resize", scheduleSerialFit);
+      serialResizeListenerBound = true;
+    }
+
+    scheduleSerialFit();
+    setTimeout(scheduleSerialFit, 80);
+    setTimeout(scheduleSerialFit, 250);
+  }
+
   function hasRunningVm() {
     return !!(emulator && emulator.is_running && emulator.is_running());
   }
@@ -360,6 +468,7 @@
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
       completeDownloadMeter();
+      setupSerialResizeHandling();
       if (serialEnabled && serialUseXterm) {
         const term = emulator?.serial_adapter?.term;
         if (term && typeof term.attachCustomKeyEventHandler === "function") {
@@ -460,6 +569,12 @@
     }
   });
 
+  if (serialFullscreenBtn) {
+    serialFullscreenBtn.addEventListener("click", () => {
+      void toggleSerialFullscreen();
+    });
+  }
+
   specialKeyButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const action = btn.getAttribute("data-special-key");
@@ -482,6 +597,16 @@
   if (vgaPanelEl && !vgaEnabled) {
     vgaPanelEl.style.display = "none";
   }
+
+  document.addEventListener("fullscreenchange", () => {
+    updateSerialFullscreenButton();
+    scheduleSerialFit();
+  });
+  document.addEventListener("webkitfullscreenchange", () => {
+    updateSerialFullscreenButton();
+    scheduleSerialFit();
+  });
+  updateSerialFullscreenButton();
 
   setStatus("idle");
 })();
