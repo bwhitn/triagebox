@@ -31,7 +31,7 @@ docker-serve:
 
 clean:
 	rm -rf .work
-	rm -f public/assets/buildroot-linux.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt
+	rm -f public/assets/buildroot-linux.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt public/assets/binary-refinery-missing-buildroot-packages.txt
 	rm -rf public/assets/v86 public/assets/xterm
 	mkdir -p public/assets
 	touch public/assets/.gitkeep

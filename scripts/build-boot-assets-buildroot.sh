@@ -30,8 +30,11 @@ REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK:-manylinux2
 REFINERY_WHEEL_STRICT="${REFINERY_WHEEL_STRICT:-1}"
 REFINERY_SDIST_FALLBACK="${REFINERY_SDIST_FALLBACK:-1}"
 REFINERY_SDIST_BUILD_JOBS="${REFINERY_SDIST_BUILD_JOBS:-${BUILDROOT_JOBS}}"
+REFINERY_SDIST_SKIP_PACKAGES="${REFINERY_SDIST_SKIP_PACKAGES:-pikepdf icicle-emu speakeasy-emulator-refined lief pyppmd}"
+REFINERY_REQUIRE_BUILDROOT_TARGET="${REFINERY_REQUIRE_BUILDROOT_TARGET:-1}"
 REFINERY_MISSING_WHEELS_REPORT="${REFINERY_MISSING_WHEELS_REPORT:-${ASSETS_DIR}/binary-refinery-missing-wheels.txt}"
 REFINERY_BUILDROOT_PROVIDED_REPORT="${REFINERY_BUILDROOT_PROVIDED_REPORT:-${ASSETS_DIR}/binary-refinery-buildroot-provided.txt}"
+REFINERY_MISSING_BUILDROOT_REPORT="${REFINERY_MISSING_BUILDROOT_REPORT:-${ASSETS_DIR}/binary-refinery-missing-buildroot-packages.txt}"
 BUILD_LEGAL_INFO="${BUILD_LEGAL_INFO:-1}"
 LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar.gz}"
 
@@ -60,8 +63,13 @@ done
 mkdir -p "${ASSETS_DIR}" "${WORK_DIR}" "${SRC_PARENT}" "${DL_DIR}"
 rm -f "${REFINERY_MISSING_WHEELS_REPORT}"
 rm -f "${REFINERY_BUILDROOT_PROVIDED_REPORT}"
+rm -f "${REFINERY_MISSING_BUILDROOT_REPORT}"
 if [[ -z "${REFINERY_WHEEL_PLATFORM_PRIMARY}" ]] || [[ -z "${REFINERY_WHEEL_PLATFORM_FALLBACK}" ]]; then
     echo "REFINERY_WHEEL_PLATFORM_PRIMARY and REFINERY_WHEEL_PLATFORM_FALLBACK must be non-empty" >&2
+    exit 1
+fi
+if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" != "0" ]] && [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" != "1" ]]; then
+    echo "REFINERY_REQUIRE_BUILDROOT_TARGET must be 0 or 1 (got: ${REFINERY_REQUIRE_BUILDROOT_TARGET})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -90,6 +98,7 @@ refinery_pip_requirements="${WORK_DIR}/refinery-pip-requirements.txt"
 refinery_buildroot_requirements="${WORK_DIR}/refinery-buildroot-provided.txt"
 refinery_buildroot_symbols="${WORK_DIR}/refinery-buildroot-symbols.txt"
 refinery_buildroot_map="${WORK_DIR}/refinery-buildroot-requirement-symbol-map.tsv"
+refinery_buildroot_required_missing="${WORK_DIR}/refinery-buildroot-required-missing.txt"
 
 if [[ ! -f "${refinery_requirements_source}" ]]; then
     echo "Missing binary-refinery requirements file: ${refinery_requirements_source}" >&2
@@ -100,6 +109,31 @@ fi
 : > "${refinery_buildroot_requirements}"
 : > "${refinery_buildroot_symbols}"
 : > "${refinery_buildroot_map}"
+: > "${refinery_buildroot_required_missing}"
+
+normalize_requirement_name() {
+    local requirement_line="$1"
+    local req_name
+
+    req_name="${requirement_line%%;*}"
+    req_name="${req_name%%[*}"
+    req_name="${req_name//[[:space:]]/}"
+    req_name="${req_name%%<*}"
+    req_name="${req_name%%>*}"
+    req_name="${req_name%%=*}"
+    req_name="${req_name%%!*}"
+    req_name="${req_name%%~*}"
+    req_name="${req_name,,}"
+    printf '%s' "$(printf '%s' "${req_name}" | tr -cd '[:alnum:]')"
+}
+
+append_unique_requirement_line() {
+    local line="$1"
+    local file="$2"
+    if ! grep -Fxq "${line}" "${file}"; then
+        printf '%s\n' "${line}" >> "${file}"
+    fi
+}
 
 declare -A buildroot_python_symbol_by_norm=()
 for package_dir in "${BUILDROOT_SRC}"/package/python-*; do
@@ -119,31 +153,25 @@ done
 declare -A refinery_buildroot_seen_symbols=()
 resolve_refinery_requirement() {
     local requirement_line="$1"
-    local req_name
     local req_norm
     local req_symbol
 
-    req_name="${requirement_line%%;*}"
-    req_name="${req_name%%[*}"
-    req_name="${req_name//[[:space:]]/}"
-    req_name="${req_name%%<*}"
-    req_name="${req_name%%>*}"
-    req_name="${req_name%%=*}"
-    req_name="${req_name%%!*}"
-    req_name="${req_name%%~*}"
-    req_name="${req_name,,}"
-    req_norm="$(printf '%s' "${req_name}" | tr -cd '[:alnum:]')"
+    req_norm="$(normalize_requirement_name "${requirement_line}")"
 
     if [[ -n "${req_norm}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm]:-}" ]]; then
         req_symbol="${buildroot_python_symbol_by_norm[$req_norm]}"
-        printf '%s\n' "${requirement_line}" >> "${refinery_buildroot_requirements}"
+        append_unique_requirement_line "${requirement_line}" "${refinery_buildroot_requirements}"
         printf '%s\t%s\n' "${requirement_line}" "${req_symbol}" >> "${refinery_buildroot_map}"
         if [[ -z "${refinery_buildroot_seen_symbols[$req_symbol]:-}" ]]; then
             refinery_buildroot_seen_symbols["${req_symbol}"]=1
             printf '%s\n' "${req_symbol}=y" >> "${refinery_buildroot_symbols}"
         fi
     else
-        printf '%s\n' "${requirement_line}" >> "${refinery_pip_requirements}"
+        if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" == "1" ]]; then
+            append_unique_requirement_line "${requirement_line}" "${refinery_buildroot_required_missing}"
+        else
+            append_unique_requirement_line "${requirement_line}" "${refinery_pip_requirements}"
+        fi
     fi
 }
 
@@ -220,14 +248,6 @@ make -C "${BUILDROOT_SRC}" \
     PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
     olddefconfig
 
-append_unique_requirement_line() {
-    local line="$1"
-    local file="$2"
-    if ! grep -Fxq "${line}" "${file}"; then
-        printf '%s\n' "${line}" >> "${file}"
-    fi
-}
-
 refinery_buildroot_requirements_active="${WORK_DIR}/refinery-buildroot-provided-active.txt"
 : > "${refinery_buildroot_requirements_active}"
 if [[ -s "${refinery_buildroot_map}" ]]; then
@@ -237,7 +257,11 @@ if [[ -s "${refinery_buildroot_map}" ]]; then
         if grep -q "^${requirement_symbol}=y$" "${OUT_DIR}/.config"; then
             append_unique_requirement_line "${requirement_line}" "${refinery_buildroot_requirements_active}"
         else
-            append_unique_requirement_line "${requirement_line}" "${refinery_pip_requirements}"
+            if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" == "1" ]]; then
+                append_unique_requirement_line "${requirement_line}" "${refinery_buildroot_required_missing}"
+            else
+                append_unique_requirement_line "${requirement_line}" "${refinery_pip_requirements}"
+            fi
         fi
     done < "${refinery_buildroot_map}"
 fi
@@ -246,6 +270,18 @@ if [[ -s "${refinery_buildroot_requirements}" ]]; then
     cp "${refinery_buildroot_requirements}" "${REFINERY_BUILDROOT_PROVIDED_REPORT}"
 else
     rm -f "${REFINERY_BUILDROOT_PROVIDED_REPORT}"
+fi
+if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" == "1" ]]; then
+    if [[ -s "${refinery_buildroot_required_missing}" ]]; then
+        sort -u "${refinery_buildroot_required_missing}" -o "${refinery_buildroot_required_missing}"
+        cp "${refinery_buildroot_required_missing}" "${REFINERY_MISSING_BUILDROOT_REPORT}"
+        missing_buildroot_count="$(wc -l < "${refinery_buildroot_required_missing}" | awk '{print $1}')"
+        echo "Missing Buildroot target package coverage for ${missing_buildroot_count} binary-refinery optional requirement(s)." >&2
+        echo "See: ${REFINERY_MISSING_BUILDROOT_REPORT}" >&2
+        echo "Create Buildroot packages for these requirements or set REFINERY_REQUIRE_BUILDROOT_TARGET=0 to allow pip wheel resolution." >&2
+        exit 1
+    fi
+    rm -f "${REFINERY_MISSING_BUILDROOT_REPORT}"
 fi
 
 require_prefetched_wheels=0
@@ -263,7 +299,14 @@ if [[ "${PREFETCH_DOWNLOADS}" == "1" ]]; then
         PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
         source
 
-    if [[ "${PREFETCH_REFINERY_WHEELS}" == "1" ]]; then
+    if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" == "1" ]]; then
+        echo "Skipping binary-refinery wheel prefetch (REFINERY_REQUIRE_BUILDROOT_TARGET=1)"
+        rm -rf "${REFINERY_WHEELHOUSE_DIR}"
+        mkdir -p "${REFINERY_WHEELHOUSE_DIR}"
+        : > "${REFINERY_WHEELHOUSE_DIR}/requirements-resolved.txt"
+        rm -f "${REFINERY_WHEELHOUSE_DIR}/requirements-missing.txt"
+        require_prefetched_wheels=1
+    elif [[ "${PREFETCH_REFINERY_WHEELS}" == "1" ]]; then
         if ! python3 -m pip --version >/dev/null 2>&1; then
             echo "python3 -m pip is required for PREFETCH_REFINERY_WHEELS=1" >&2
             echo "Install python3-pip or run with PREFETCH_REFINERY_WHEELS=0" >&2
@@ -286,6 +329,13 @@ if [[ "${PREFETCH_DOWNLOADS}" == "1" ]]; then
         missing_tmp="${WORK_DIR}/prefetch-requirements-missing.txt"
         sdist_dl_dir="${WORK_DIR}/prefetch-sdist-dl"
         sdist_wheel_dir="${WORK_DIR}/prefetch-sdist-wheel"
+        declare -A refinery_sdist_skip=()
+        if [[ -n "${REFINERY_SDIST_SKIP_PACKAGES}" ]]; then
+            for skip_pkg in ${REFINERY_SDIST_SKIP_PACKAGES}; do
+                skip_norm="$(normalize_requirement_name "${skip_pkg}")"
+                [[ -n "${skip_norm}" ]] && refinery_sdist_skip["${skip_norm}"]=1
+            done
+        fi
         cp "${requirements_src}" "${requirements_tmp}"
         mkdir -p "${REFINERY_WHEELHOUSE_DIR}"
         : > "${resolved_tmp}"
@@ -297,6 +347,11 @@ if [[ "${PREFETCH_DOWNLOADS}" == "1" ]]; then
             [[ -z "${requirement}" ]] && continue
             [[ "${requirement:0:1}" == "#" ]] && continue
             echo "  - ${requirement}"
+            requirement_norm="$(normalize_requirement_name "${requirement}")"
+            skip_sdist_for_req=0
+            if [[ -n "${requirement_norm}" ]] && [[ -n "${refinery_sdist_skip[$requirement_norm]:-}" ]]; then
+                skip_sdist_for_req=1
+            fi
             if PIP_DISABLE_PIP_VERSION_CHECK=1 \
                 PIP_NO_CACHE_DIR=1 \
                 python3 -m pip download \
@@ -325,7 +380,7 @@ if [[ "${PREFETCH_DOWNLOADS}" == "1" ]]; then
                         "${requirement}"
                 then
                     printf '%s\n' "${requirement}" >> "${resolved_tmp}"
-                elif [[ "${REFINERY_SDIST_FALLBACK}" == "1" ]]; then
+                elif [[ "${REFINERY_SDIST_FALLBACK}" == "1" ]] && [[ "${skip_sdist_for_req}" == "0" ]]; then
                     rm -rf "${sdist_dl_dir}"/* "${sdist_wheel_dir}"/*
                     if PIP_DISABLE_PIP_VERSION_CHECK=1 \
                         PIP_NO_CACHE_DIR=1 \
@@ -358,6 +413,8 @@ if [[ "${PREFETCH_DOWNLOADS}" == "1" ]]; then
                             fi
                         fi
                     fi
+                elif [[ "${skip_sdist_for_req}" == "1" ]]; then
+                    echo "    skipping sdist fallback for ${requirement} (known native package; wheel-only on i686 path)"
                 fi
                 printf '%s\n' "${requirement}" >> "${missing_tmp}"
             fi
@@ -405,11 +462,15 @@ legal_info_archive_name=""
 legal_info_archive_size_mb=0
 missing_wheels_report_name=""
 buildroot_provided_report_name=""
+missing_buildroot_report_name=""
 if [[ -f "${REFINERY_MISSING_WHEELS_REPORT}" ]]; then
     missing_wheels_report_name="$(basename "${REFINERY_MISSING_WHEELS_REPORT}")"
 fi
 if [[ -f "${REFINERY_BUILDROOT_PROVIDED_REPORT}" ]]; then
     buildroot_provided_report_name="$(basename "${REFINERY_BUILDROOT_PROVIDED_REPORT}")"
+fi
+if [[ -f "${REFINERY_MISSING_BUILDROOT_REPORT}" ]]; then
+    missing_buildroot_report_name="$(basename "${REFINERY_MISSING_BUILDROOT_REPORT}")"
 fi
 if [[ "${BUILD_LEGAL_INFO}" == "1" ]]; then
     echo "[5/8] Building Buildroot legal-info"
@@ -533,13 +594,16 @@ buildroot_defconfig=${BUILDROOT_DEFCONFIG}
 build_profile=${BUILD_PROFILE}
 prefetch_downloads=${PREFETCH_DOWNLOADS}
 prefetch_refinery_wheels=${PREFETCH_REFINERY_WHEELS}
+refinery_require_buildroot_target=${REFINERY_REQUIRE_BUILDROOT_TARGET}
 refinery_wheel_strict=${REFINERY_WHEEL_STRICT}
 refinery_sdist_fallback=${REFINERY_SDIST_FALLBACK}
 refinery_sdist_build_jobs=${REFINERY_SDIST_BUILD_JOBS}
+refinery_sdist_skip_packages=${REFINERY_SDIST_SKIP_PACKAGES}
 refinery_wheel_platform_primary=${REFINERY_WHEEL_PLATFORM_PRIMARY}
 refinery_wheel_platform_fallback=${REFINERY_WHEEL_PLATFORM_FALLBACK}
 refinery_missing_wheels_report=${missing_wheels_report_name}
 refinery_buildroot_provided_report=${buildroot_provided_report_name}
+refinery_missing_buildroot_report=${missing_buildroot_report_name}
 legal_info_enabled=${BUILD_LEGAL_INFO}
 legal_info_archive=${legal_info_archive_name}
 legal_info_archive_size_mb=${legal_info_archive_size_mb}
@@ -560,6 +624,9 @@ if [[ -f "${REFINERY_MISSING_WHEELS_REPORT}" ]]; then
 fi
 if [[ -f "${REFINERY_BUILDROOT_PROVIDED_REPORT}" ]]; then
     echo "  ${REFINERY_BUILDROOT_PROVIDED_REPORT}"
+fi
+if [[ -f "${REFINERY_MISSING_BUILDROOT_REPORT}" ]]; then
+    echo "  ${REFINERY_MISSING_BUILDROOT_REPORT}"
 fi
 if [[ -f "${LEGAL_INFO_ARCHIVE}" ]]; then
     echo "  ${LEGAL_INFO_ARCHIVE}"

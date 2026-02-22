@@ -22,7 +22,8 @@ This repository provides a minimal Buildroot-based v86 setup with:
 
 - `curl`, `tar`, `make`, `gcc`, `patch`, `bison`, `flex`, `perl`, `rsync`, `bc`, `unzip`
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
-- `python3` and `python3-pip` (pip is used for early binary-refinery wheel prefetch; set `PREFETCH_REFINERY_WHEELS=0` to skip)
+- `python3` (required)
+- `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
 
 ## Build VM assets
 
@@ -66,15 +67,18 @@ make build-disk
   `optimized`: `-O3` + LTO for best runtime speed
   `fast`: `-O0`, LTO off for shorter build times
 - `PREFETCH_DOWNLOADS` (default `1`; runs `make source` before compile)
-- `PREFETCH_REFINERY_WHEELS` (default `1`; pre-downloads binary-refinery wheel deps early, requires local `python3 -m pip`)
+- `PREFETCH_REFINERY_WHEELS` (default `1`; pre-downloads binary-refinery wheel deps early, requires local `python3 -m pip` only when `REFINERY_REQUIRE_BUILDROOT_TARGET=0`)
 - `REFINERY_WHEELHOUSE_DIR` (default `.work/buildroot/dl/python-binary-refinery-wheelhouse`)
 - `REFINERY_WHEEL_PLATFORM_PRIMARY` (default `manylinux_2_28_i686`)
 - `REFINERY_WHEEL_PLATFORM_FALLBACK` (default `manylinux2014_i686`)
+- `REFINERY_REQUIRE_BUILDROOT_TARGET` (default `1`; when `1`, binary-refinery optional requirements must be provided as Buildroot target packages, no pip fallback)
 - `REFINERY_WHEEL_STRICT` (default `1`; build fails if any optional dependency cannot be resolved for i686)
 - `REFINERY_SDIST_FALLBACK` (default `1`; if wheel is missing, try sdist and keep it only when a universal `*-none-any.whl` can be built)
 - `REFINERY_SDIST_BUILD_JOBS` (default `BUILDROOT_JOBS`; parallelism for sdist fallback wheel builds)
+- `REFINERY_SDIST_SKIP_PACKAGES` (default `pikepdf icicle-emu speakeasy-emulator-refined lief pyppmd`; skips costly host sdist builds for known native packages on i686 wheel path)
 - `REFINERY_MISSING_WHEELS_REPORT` (default `public/assets/binary-refinery-missing-wheels.txt`)
 - `REFINERY_BUILDROOT_PROVIDED_REPORT` (default `public/assets/binary-refinery-buildroot-provided.txt`)
+- `REFINERY_MISSING_BUILDROOT_REPORT` (default `public/assets/binary-refinery-missing-buildroot-packages.txt`)
 - `BUILD_LEGAL_INFO` (default `1`; runs `make legal-info` and publishes archive)
 - `LEGAL_INFO_ARCHIVE` (default `public/assets/buildroot-legal-info.tar.gz`)
 - Python 3 is always included
@@ -95,6 +99,7 @@ Binary-refinery note:
 - Optional deps are resolved in two phases for i686:
   1) If a matching Buildroot `python-*` package exists, it is enabled and built for target.
   2) Remaining deps are resolved via pip wheel prefetch (`manylinux_2_28_i686` plus fallback `manylinux2014_i686`), with optional sdist fallback to universal wheels only.
+- With `REFINERY_REQUIRE_BUILDROOT_TARGET=1`, step (2) is disabled and build fails early for any optional dependency not backed by a Buildroot target package (report written to `REFINERY_MISSING_BUILDROOT_REPORT`).
 - If an auto-mapped Buildroot package is unavailable for the active config/arch after `olddefconfig`, that requirement is automatically pushed back to pip resolution.
 - Some optional deps do not publish i686 Linux wheels for newer Python ABIs. With `REFINERY_SDIST_FALLBACK=1`, build tries sdist next and only accepts universal wheels (`*-none-any.whl`) to avoid host-arch contamination.
 - With `REFINERY_WHEEL_STRICT=1` (default), unresolved items fail the build. Set `REFINERY_WHEEL_STRICT=0` only if you explicitly want best-effort mode.
@@ -113,8 +118,11 @@ BUILD_PROFILE=optimized make build-disk
 BUILD_PROFILE=fast make build-disk
 PREFETCH_DOWNLOADS=0 make build-disk
 PREFETCH_REFINERY_WHEELS=0 make build-disk
+REFINERY_REQUIRE_BUILDROOT_TARGET=1 make build-disk
+REFINERY_REQUIRE_BUILDROOT_TARGET=0 make build-disk
 REFINERY_SDIST_FALLBACK=0 make build-disk
 REFINERY_SDIST_BUILD_JOBS=8 make build-disk
+REFINERY_SDIST_SKIP_PACKAGES="pikepdf icicle-emu speakeasy-emulator-refined lief pyppmd" make build-disk
 REFINERY_WHEEL_PLATFORM_PRIMARY=manylinux_2_28_i686 REFINERY_WHEEL_PLATFORM_FALLBACK=manylinux2014_i686 make build-disk
 REFINERY_WHEEL_STRICT=1 make build-disk
 REFINERY_WHEEL_STRICT=0 make build-disk
@@ -136,6 +144,7 @@ Open `http://localhost:8080`.
 Download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
+Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 
 ### Docker server (Debian trixie-slim)
 
