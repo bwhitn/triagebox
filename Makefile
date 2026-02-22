@@ -1,13 +1,16 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build fetch-v86 build-disk write-build-config disk-usage shrink-disk serve docker-serve clean
+.PHONY: build preflight fetch-v86 build-disk write-build-config disk-usage shrink-disk serve docker-serve clean
 
 build: fetch-v86 build-disk
 
-fetch-v86:
+preflight:
+	./scripts/check-build-deps.sh
+
+fetch-v86: preflight
 	./scripts/fetch-v86-assets.sh
 
-build-disk:
+build-disk: preflight
 	./scripts/build-boot-assets-buildroot.sh
 	./scripts/write-build-config.sh
 

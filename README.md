@@ -20,7 +20,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 
 ## Prerequisites
 
-- `curl`, `tar`, `make`, `gcc`, `patch`, `bison`, `flex`, `perl`, `rsync`, `bc`
+- `curl`, `tar`, `make`, `gcc`, `patch`, `bison`, `flex`, `perl`, `rsync`, `bc`, `unzip`
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` and `python3-pip` (pip is used for early binary-refinery wheel prefetch; set `PREFETCH_REFINERY_WHEELS=0` to skip)
 
@@ -28,6 +28,13 @@ This repository provides a minimal Buildroot-based v86 setup with:
 
 ```bash
 make build
+```
+
+`make build` now runs a host dependency preflight first and fails fast if anything is missing.
+You can run only the check with:
+
+```bash
+make preflight
 ```
 
 This does:
