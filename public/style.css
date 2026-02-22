@@ -52,6 +52,35 @@ button:hover {
   background: #dce3ec;
 }
 
+.download-panel {
+  display: none;
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.download-panel.active {
+  display: block;
+}
+
+#download-status,
+#download-detail {
+  margin: 0 0 0.35rem;
+  font-size: 0.88rem;
+}
+
+#download-detail {
+  margin: 0.35rem 0 0;
+  color: #4a5568;
+}
+
+#download-progress {
+  width: 100%;
+  height: 0.8rem;
+}
+
 #special-keys button {
   min-width: 88px;
   font-size: 0.84rem;

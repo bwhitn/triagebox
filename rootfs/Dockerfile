@@ -2,6 +2,7 @@ FROM --platform=linux/386 alpine:3.20
 
 ARG MKINITFS_FEATURES="base ata scsi ext4"
 ARG USER_APK_PACKAGES=""
+ARG PYTHON_PIP_PACKAGES="binary-refinery"
 ARG STRIP_TO_BUSYBOX="1"
 
 COPY user-packages.txt /tmp/user-packages.txt
@@ -13,6 +14,19 @@ RUN set -eux; \
     fi; \
     if [ -n "${USER_APK_PACKAGES}" ]; then \
       apk add --no-cache ${USER_APK_PACKAGES}; \
+    fi; \
+    if [ -n "${PYTHON_PIP_PACKAGES}" ]; then \
+      apk add --no-cache --virtual .pip-build-deps \
+        py3-pip \
+        ca-certificates \
+        build-base \
+        python3-dev; \
+      PIP_BREAK_SYSTEM_PACKAGES=1 PIP_NO_CACHE_DIR=1 python3 -m pip install --no-cache-dir ${PYTHON_PIP_PACKAGES}; \
+      python3 -m pip cache purge >/dev/null 2>&1 || true; \
+      apk del --no-cache .pip-build-deps || true; \
+      rm -rf /root/.cache /tmp/pip-* /tmp/*.whl; \
+      find /usr/lib/python3* -type d -name '__pycache__' -prune -exec rm -rf {} +; \
+      find /usr/lib/python3* -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete; \
     fi; \
     apk add --no-cache \
       mkinitfs; \

@@ -25,6 +25,10 @@
   const stopBtn = document.getElementById("stop");
   const restartBtn = document.getElementById("restart");
   const clearSerialBtn = document.getElementById("clear-serial");
+  const downloadPanelEl = document.getElementById("download-panel");
+  const downloadStatusEl = document.getElementById("download-status");
+  const downloadProgressEl = document.getElementById("download-progress");
+  const downloadDetailEl = document.getElementById("download-detail");
 
   let emulator = null;
   let emulatorReadyPromise = null;
@@ -32,6 +36,9 @@
   let sampleTimer = null;
   let lastSampleTime = 0;
   let lastInstructionCount = 0;
+  let downloadFileProgress = new Map();
+  let downloadFileCount = 0;
+  let sawDownloadProgress = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -70,6 +77,132 @@
 
   function setIps(text) {
     ipsEl.textContent = `instructions/sec: ${text}`;
+  }
+
+  function setDownloadVisible(visible) {
+    if (!downloadPanelEl) {
+      return;
+    }
+    downloadPanelEl.classList.toggle("active", visible);
+  }
+
+  function setDownloadStatus(text) {
+    if (!downloadStatusEl) {
+      return;
+    }
+    downloadStatusEl.textContent = `download: ${text}`;
+  }
+
+  function setDownloadDetail(text) {
+    if (!downloadDetailEl) {
+      return;
+    }
+    downloadDetailEl.textContent = text;
+  }
+
+  function setDownloadProgress(percent) {
+    if (!downloadProgressEl) {
+      return;
+    }
+    const bounded = Math.max(0, Math.min(100, Math.round(percent)));
+    downloadProgressEl.value = bounded;
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) {
+      return "n/a";
+    }
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KiB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+    }
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
+  }
+
+  function basename(path) {
+    if (typeof path !== "string" || path.length === 0) {
+      return "asset";
+    }
+    const parts = path.split("/").filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : path;
+  }
+
+  function beginDownloadMeter() {
+    downloadFileProgress = new Map();
+    downloadFileCount = 0;
+    sawDownloadProgress = false;
+    setDownloadVisible(true);
+    setDownloadProgress(0);
+    setDownloadStatus("starting");
+    setDownloadDetail("waiting for asset downloads...");
+  }
+
+  function handleDownloadProgress(info) {
+    const evt = info && typeof info === "object" ? info : {};
+    sawDownloadProgress = true;
+    setDownloadVisible(true);
+
+    if (Number.isFinite(evt.file_count) && evt.file_count > 0) {
+      downloadFileCount = evt.file_count;
+    }
+
+    const index = Number.isFinite(evt.file_index) ? evt.file_index : downloadFileProgress.size;
+    const loaded = Number.isFinite(evt.loaded) ? Math.max(0, evt.loaded) : 0;
+    const total = Number.isFinite(evt.total) ? Math.max(0, evt.total) : 0;
+    const computable = evt.lengthComputable === true && total > 0;
+    const fileName = typeof evt.file_name === "string" ? evt.file_name : "";
+
+    downloadFileProgress.set(index, { loaded, total, computable, fileName });
+
+    let knownLoaded = 0;
+    let knownTotal = 0;
+    downloadFileProgress.forEach((entry) => {
+      if (entry.computable) {
+        knownLoaded += Math.min(entry.loaded, entry.total);
+        knownTotal += entry.total;
+      }
+    });
+
+    if (knownTotal > 0) {
+      setDownloadProgress((knownLoaded / knownTotal) * 100);
+    }
+
+    const fileNumber = Number.isFinite(evt.file_index) ? (evt.file_index + 1) : downloadFileProgress.size;
+    const fileCount = downloadFileCount > 0 ? downloadFileCount : downloadFileProgress.size;
+    const displayFile = fileCount > 0 ? Math.min(fileNumber, fileCount) : fileNumber;
+    setDownloadStatus(`loading ${displayFile}/${Math.max(fileCount, 1)}`);
+
+    const name = basename(fileName);
+    if (computable) {
+      const filePercent = Math.round((loaded / total) * 100);
+      setDownloadDetail(`${name}: ${filePercent}% (${formatBytes(loaded)} / ${formatBytes(total)})`);
+    } else {
+      setDownloadDetail(`${name}: ${formatBytes(loaded)} downloaded`);
+    }
+  }
+
+  function handleDownloadError(info) {
+    const evt = info && typeof info === "object" ? info : {};
+    setDownloadVisible(true);
+    setDownloadStatus("error");
+    setDownloadDetail(`failed to fetch ${basename(evt.file_name)}`);
+  }
+
+  function completeDownloadMeter() {
+    setDownloadVisible(true);
+    setDownloadProgress(100);
+    if (sawDownloadProgress) {
+      setDownloadStatus("complete");
+      setDownloadDetail("all vm assets loaded");
+    } else {
+      setDownloadStatus("complete (cached)");
+      setDownloadDetail("assets already available");
+    }
   }
 
   function startSampling() {
@@ -216,8 +349,17 @@
 
     emulator = new window.V86(vmOptions);
 
+    emulator.add_listener("download-progress", (info) => {
+      handleDownloadProgress(info);
+    });
+
+    emulator.add_listener("download-error", (info) => {
+      handleDownloadError(info);
+    });
+
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
+      completeDownloadMeter();
       if (serialEnabled && serialUseXterm) {
         const term = emulator?.serial_adapter?.term;
         if (term && typeof term.attachCustomKeyEventHandler === "function") {
@@ -274,6 +416,11 @@
 
   startBtn.addEventListener("click", async () => {
     try {
+      if (!emulator) {
+        beginDownloadMeter();
+      } else {
+        setDownloadVisible(true);
+      }
       const vm = ensureEmulator();
       if (emulatorReadyPromise) {
         await emulatorReadyPromise;
@@ -282,6 +429,9 @@
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setStatus(`error (${msg})`);
+      setDownloadVisible(true);
+      setDownloadStatus("error");
+      setDownloadDetail(msg);
       if (msg.includes("Range: bytes=")) {
         setStatus("error (async disk requires HTTP range support; set asyncDisk=false)");
       }

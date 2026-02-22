@@ -14,6 +14,7 @@ MIN_DISK_MB="${MIN_DISK_MB:-512}"
 DISK_MB="${DISK_MB:-}"
 MKINITFS_FEATURES="${MKINITFS_FEATURES:-base ata scsi ext4}"
 USER_APK_PACKAGES="${USER_APK_PACKAGES:-}"
+PYTHON_PIP_PACKAGES="${PYTHON_PIP_PACKAGES:-binary-refinery}"
 STRIP_TO_BUSYBOX="${STRIP_TO_BUSYBOX:-1}"
 PRUNE_ROOTFS="${PRUNE_ROOTFS:-1}"
 AUTO_SHRINK="${AUTO_SHRINK:-1}"
@@ -73,6 +74,7 @@ docker_cmd build \
     --platform "${PLATFORM}" \
     --build-arg "MKINITFS_FEATURES=${MKINITFS_FEATURES}" \
     --build-arg "USER_APK_PACKAGES=${USER_APK_PACKAGES}" \
+    --build-arg "PYTHON_PIP_PACKAGES=${PYTHON_PIP_PACKAGES}" \
     --build-arg "STRIP_TO_BUSYBOX=${STRIP_TO_BUSYBOX}" \
     -t "${ROOTFS_TAG}" \
     "${ROOTFS_DIR}"
@@ -128,11 +130,12 @@ elif [[ "${PRUNE_ROOTFS}" != "0" ]]; then
 fi
 
 echo "Cleaning transient files from export tree"
-for dir in tmp var/tmp var/cache var/log; do
+for dir in tmp var/tmp var/cache var/log root/.cache; do
     if [[ -d "${EXPORT_DIR}/${dir}" ]]; then
         find "${EXPORT_DIR}/${dir}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     fi
 done
+rm -rf "${EXPORT_DIR}/tmp/pip-"* "${EXPORT_DIR}/tmp/"*.whl 2>/dev/null || true
 mkdir -p "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp" || true
 

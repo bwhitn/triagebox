@@ -55,12 +55,14 @@ Default disk sizing targets a compact image:
 - `SHRINK_MIN_MB=0` by default (no forced minimum after shrink)
 - `MKINITFS_FEATURES="base ata scsi ext4"` by default (safe root-mount feature set)
 - transient files are cleaned before packing (for example `/tmp`, `/var/tmp`, `/var/cache`, `/var/log`)
+- pip/apk temporary artifacts are cleaned during build (`py3-pip` removed, pip cache/wheels purged, root cache dirs cleared)
 
 Rootfs package policy is allowlist-based:
 
 - only minimal boot requirements are always installed (`mkinitfs` + kernel package during build)
 - additional runtime tools are installed only if you list them in `rootfs/user-packages.txt`
 - one-off package additions can be passed with `USER_APK_PACKAGES`
+- Python pip packages can be installed at build time via `PYTHON_PIP_PACKAGES` (defaults to `binary-refinery`), then `py3-pip` is removed from the final image
 - `STRIP_TO_BUSYBOX=1` by default removes package-manager tooling (`apk`) from the final runtime image
 
 You can override explicitly for tighter control:
@@ -91,6 +93,18 @@ Install one-off extra packages for a build:
 
 ```bash
 USER_APK_PACKAGES="curl strace" make build-disk
+```
+
+Override pip-installed Python tools for a build:
+
+```bash
+PYTHON_PIP_PACKAGES="binary-refinery" make build-disk
+```
+
+Disable pip-installed Python tools:
+
+```bash
+PYTHON_PIP_PACKAGES="" make build-disk
 ```
 
 Keep `apk` tooling in the runtime image (disable busybox-only strip):
