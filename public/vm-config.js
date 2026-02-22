@@ -9,6 +9,8 @@ window.V86_VM_CONFIG = {
   diskImage: "assets/alpine-linux.img",
   // Optional override; if omitted, app.js chooses based on enableSerial/build flag.
   cmdline: "",
-  enableSerial: false,
+  enableSerial: true,
+  // Optional: force VGA on/off. Default behavior is VGA off in serial mode, on otherwise.
+  // enableVga: true,
   asyncDisk: false
 };

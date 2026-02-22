@@ -14,7 +14,7 @@ This repository provides a minimal v86 setup with:
 - `rootfs/overlay/`: files copied into the guest filesystem
 - `scripts/build-boot-assets.sh`: builds guest artifacts (`alpine-linux.img`, `vmlinuz`, `initrd.img`)
 - `scripts/write-build-config.sh`: writes build-time UI flags (for example serial enablement)
-- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, and VGA BIOS
+- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, VGA BIOS, and xterm.js assets
 - `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
 
@@ -39,6 +39,7 @@ PLATFORM=linux/386 make build
 This does:
 
 1. Download v86 runtime assets to `public/assets/v86/`
+   and terminal assets to `public/assets/xterm/`
 2. Build Alpine rootfs image from `rootfs/Dockerfile`
 3. Export rootfs and create `public/assets/alpine-linux.img`
 4. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
@@ -177,6 +178,10 @@ Enable serial console for a build:
 ENABLE_SERIAL=1 make build-disk
 ```
 
+When serial is enabled, the UI uses xterm.js (if assets are present) for proper
+terminal behavior with full-screen programs like `top`. If xterm assets are
+missing, it falls back to a textarea.
+
 ## Check disk usage
 
 ```bash
@@ -224,7 +229,7 @@ Edit `public/vm-config.js`:
 - `memoryMb` defaults to `512`
 - `cmdline` can override guest init behavior (left empty by default so app.js picks serial/non-serial defaults)
 - file paths for BIOS/kernel/initrd/disk image
-- `enableSerial` defaults to `false` (build flag can override via `public/build-config.js`)
+- `enableSerial` defaults to `true` (build flag can override via `public/build-config.js`)
 - `asyncDisk` is opt-in and defaults to `false` for compatibility with simple static servers (such as `python3 -m http.server`). Set it to `true` only with a server that supports HTTP byte-range requests.
 
 ## Notes

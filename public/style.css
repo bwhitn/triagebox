@@ -52,17 +52,26 @@ button:hover {
   background: #dce3ec;
 }
 
-#serial {
+#special-keys button {
+  min-width: 88px;
+  font-size: 0.84rem;
+}
+
+#serial-xterm {
   width: 100%;
-  min-height: 280px;
-  font-family: inherit;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  background: #0f1115;
-  color: #d6f5a6;
+  height: 420px;
   border: 1px solid #252c36;
   border-radius: 8px;
-  padding: 0.6rem;
+  background: #0f1115;
+  overflow: hidden;
+}
+
+#serial-xterm .xterm {
+  padding: 0.4rem;
+}
+
+#serial-xterm .xterm-viewport {
+  overflow-y: auto !important;
 }
 
 #screen_container {
@@ -83,7 +92,8 @@ button:hover {
     padding: 0.75rem;
   }
 
-  #serial {
-    min-height: 220px;
+  #serial-xterm {
+    min-height: 240px;
+    height: 300px;
   }
 }

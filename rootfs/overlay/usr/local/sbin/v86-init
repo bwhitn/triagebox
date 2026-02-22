@@ -14,8 +14,29 @@ echo "Alpine Linux running on v86"
 echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."
 echo ""
 
-while true; do
+launch_shell() {
+    if command -v cttyhack >/dev/null 2>&1; then
+        setsid cttyhack /bin/sh
+        return
+    fi
+    if /bin/busybox --list 2>/dev/null | grep -qx "cttyhack"; then
+        setsid /bin/busybox cttyhack /bin/sh
+        return
+    fi
+    if [ -c /dev/ttyS0 ]; then
+        # Fallback path when cttyhack is unavailable:
+        # open ttyS0 as a session leader so it becomes controlling TTY.
+        setsid /bin/sh -c '
+            stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 || true
+            exec /bin/sh < /dev/ttyS0 > /dev/ttyS0 2>&1
+        '
+        return
+    fi
     /bin/sh
+}
+
+while true; do
+    launch_shell
     echo "Shell exited; restarting shell in 1s..."
     sleep 1
 done
