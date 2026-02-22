@@ -4,17 +4,18 @@ This repository provides a minimal v86 setup with:
 
 - Alpine Linux guest root filesystem built from `alpine:3.20` (`linux/386`)
 - No audio, no CD-ROM image, no floppy image, no networking relay, and mouse disabled
-- Serial-first CLI workflow with VGA BIOS enabled
+- Serial console disabled by default (can be enabled at build time)
 - 512MB RAM default
-- Built-in lightweight profiling (`instructions/sec` and instruction stats dump)
+- Lightweight runtime throughput display (`instructions/sec`)
 
 ## What is included
 
 - `rootfs/Dockerfile`: defines the boot disk content (Alpine based)
 - `rootfs/overlay/`: files copied into the guest filesystem
 - `scripts/build-boot-assets.sh`: builds guest artifacts (`alpine-linux.img`, `vmlinuz`, `initrd.img`)
+- `scripts/write-build-config.sh`: writes build-time UI flags (for example serial enablement)
 - `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, and VGA BIOS
-- `public/`: static UI to run the VM and profile it
+- `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
 
 ## Prerequisites
@@ -41,6 +42,33 @@ This does:
 2. Build Alpine rootfs image from `rootfs/Dockerfile`
 3. Export rootfs and create `public/assets/alpine-linux.img`
 4. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
+5. Write `public/build-config.js` with build-time flags
+
+Default disk sizing targets a compact image:
+
+- `MIN_DISK_MB=512`
+- `EXTRA_MB=96` (added to exported rootfs size before applying minimum)
+- `AUTO_SHRINK=1` (enabled by default after filesystem creation)
+- `SHRINK_PAD_MB=32` (extra free slack retained)
+- `SHRINK_MIN_MB=0` by default (no forced minimum after shrink)
+
+You can override explicitly for tighter control:
+
+```bash
+DISK_MB=512 make build-disk
+```
+
+Disable auto-shrink if you want to keep the initial size:
+
+```bash
+AUTO_SHRINK=0 make build-disk
+```
+
+Keep a final minimum only when you want one:
+
+```bash
+SHRINK_MIN_MB=512 make build-disk
+```
 
 If Docker socket permissions fail, run with sudo mode:
 
@@ -92,20 +120,61 @@ Then rebuild just the guest artifacts:
 make build-disk
 ```
 
+Enable serial console for a build:
+
+```bash
+ENABLE_SERIAL=1 make build-disk
+```
+
+## Check disk usage
+
+```bash
+make disk-usage
+```
+
+Or on any image path:
+
+```bash
+./scripts/disk-usage.sh public/assets/alpine-linux.img
+```
+
+## Shrink an existing image after build
+
+The build process already auto-shrinks by default, but you can also run shrink manually.
+
+Default shrink leaves 32MB free slack:
+
+```bash
+make shrink-disk
+```
+
+Tune slack space (example: 16MB):
+
+```bash
+PAD_MB=16 ./scripts/shrink-image.sh public/assets/alpine-linux.img
+```
+
+Enforce a minimum output size (example: 512MB):
+
+```bash
+MIN_MB=512 ./scripts/shrink-image.sh public/assets/alpine-linux.img
+```
+
+Create a backup before shrinking:
+
+```bash
+BACKUP_PATH=public/assets/alpine-linux.pre-shrink.img make shrink-disk
+```
+
 ## Runtime tuning
 
 Edit `public/vm-config.js`:
 
 - `memoryMb` defaults to `512`
-- `cmdline` controls guest init behavior
+- `cmdline` can override guest init behavior (left empty by default so app.js picks serial/non-serial defaults)
 - file paths for BIOS/kernel/initrd/disk image
-
-## Profiling
-
-In the web UI:
-
-- `instructions/sec` is sampled continuously while VM runs
-- `Dump Instruction Profile` shows v86 instruction statistics from `get_instruction_stats()`
+- `enableSerial` defaults to `false` (build flag can override via `public/build-config.js`)
+- `asyncDisk` is opt-in and defaults to `false` for compatibility with simple static servers (such as `python3 -m http.server`). Set it to `true` only with a server that supports HTTP byte-range requests.
 
 ## Notes
 

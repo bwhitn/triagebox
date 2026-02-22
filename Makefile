@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build fetch-v86 build-disk serve docker-serve clean
+.PHONY: build fetch-v86 build-disk write-build-config disk-usage shrink-disk serve docker-serve clean
 
 build: fetch-v86 build-disk
 
@@ -9,6 +9,16 @@ fetch-v86:
 
 build-disk:
 	./scripts/build-boot-assets.sh
+	./scripts/write-build-config.sh
+
+write-build-config:
+	./scripts/write-build-config.sh
+
+disk-usage:
+	./scripts/disk-usage.sh
+
+shrink-disk:
+	./scripts/shrink-image.sh
 
 serve:
 	./scripts/serve-local.sh

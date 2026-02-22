@@ -1,18 +1,20 @@
 (() => {
-  const config = window.V86_VM_CONFIG || {};
+  const config = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
+  const serialEnabled = config.enableSerial === true;
 
   const statusEl = document.getElementById("status");
   const ipsEl = document.getElementById("ips");
-  const profileEl = document.getElementById("profile");
+  const serialPanelEl = document.getElementById("serial-panel");
   const serialEl = document.getElementById("serial");
 
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
   const restartBtn = document.getElementById("restart");
   const clearSerialBtn = document.getElementById("clear-serial");
-  const dumpProfileBtn = document.getElementById("dump-profile");
 
   let emulator = null;
+  let emulatorReadyPromise = null;
+  let emulatorReadyResolve = null;
   let sampleTimer = null;
   let lastSampleTime = 0;
   let lastInstructionCount = 0;
@@ -72,26 +74,48 @@
       throw new Error("V86 constructor not found. Did you run make fetch-v86?");
     }
 
-    emulator = new window.V86({
+    setStatus("loading");
+    emulatorReadyPromise = new Promise((resolve) => {
+      emulatorReadyResolve = resolve;
+    });
+
+    const defaultCmdlineNoSerial = "root=LABEL=rootfs rootfstype=ext4 rw rootwait init=/usr/local/sbin/v86-init console=tty0";
+    const defaultCmdlineSerial = "root=LABEL=rootfs rootfstype=ext4 rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0";
+    const cmdline = typeof config.cmdline === "string" && config.cmdline.trim().length > 0
+      ? config.cmdline
+      : (serialEnabled ? defaultCmdlineSerial : defaultCmdlineNoSerial);
+
+    const vmOptions = {
       wasm_path: config.wasmPath || "assets/v86/v86.wasm",
       memory_size: (config.memoryMb || 512) * 1024 * 1024,
       vga_memory_size: (config.vgaMemoryMb || 8) * 1024 * 1024,
       screen_container: document.getElementById("screen_container"),
-      serial_container: serialEl,
       bios: { url: config.bios || "assets/v86/seabios.bin" },
       vga_bios: { url: config.vgaBios || "assets/v86/vgabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: config.diskImage || "assets/alpine-linux.img", async: config.asyncDisk !== false },
-      cmdline: config.cmdline || "root=/dev/sda rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0",
+      hda: { url: config.diskImage || "assets/alpine-linux.img", async: config.asyncDisk === true },
+      cmdline,
       disable_mouse: true,
       disable_speaker: true,
       boot_order: 0x132,
       autostart: false
-    });
+    };
+    if (serialEnabled) {
+      vmOptions.serial_container = serialEl;
+      vmOptions.uart1 = true;
+    } else {
+      vmOptions.uart1 = false;
+    }
+
+    emulator = new window.V86(vmOptions);
 
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
+      if (emulatorReadyResolve) {
+        emulatorReadyResolve();
+        emulatorReadyResolve = null;
+      }
     });
 
     emulator.add_listener("emulator-started", () => {
@@ -108,8 +132,21 @@
   }
 
   startBtn.addEventListener("click", async () => {
-    const vm = ensureEmulator();
-    await vm.run();
+    try {
+      const vm = ensureEmulator();
+      if (emulatorReadyPromise) {
+        await emulatorReadyPromise;
+      }
+      await vm.run();
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setStatus(`error (${msg})`);
+      if (msg.includes("Range: bytes=")) {
+        setStatus("error (async disk requires HTTP range support; set asyncDisk=false)");
+      }
+      // Surface to console for debugging.
+      console.error(err);
+    }
   });
 
   stopBtn.addEventListener("click", async () => {
@@ -130,15 +167,9 @@
     serialEl.value = "";
   });
 
-  dumpProfileBtn.addEventListener("click", () => {
-    if (!emulator) {
-      profileEl.textContent = "Start the VM first.";
-      return;
-    }
-
-    const text = emulator.get_instruction_stats();
-    profileEl.textContent = text || "No profile data yet.";
-  });
+  if (!serialEnabled && serialPanelEl) {
+    serialPanelEl.style.display = "none";
+  }
 
   setStatus("idle");
 })();

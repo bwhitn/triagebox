@@ -15,7 +15,7 @@ RUN set -eux; \
       kernel_flavor="lts"; \
     fi; \
     kernel_release="$(ls /lib/modules | sort | tail -n 1)"; \
-    mkinitfs -F "base ide scsi virtio ext4" -k "${kernel_release}" -o "/boot/initramfs-${kernel_flavor}"
+    mkinitfs -F "base ata scsi virtio ext4" -k "${kernel_release}" -o "/boot/initramfs-${kernel_flavor}"
 
 COPY overlay/ /
 
