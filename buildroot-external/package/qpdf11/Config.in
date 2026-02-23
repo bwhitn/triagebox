@@ -1,0 +1,19 @@
+config BR2_PACKAGE_QPDF11
+	bool "qpdf11"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_5
+	depends on BR2_TOOLCHAIN_HAS_ATOMIC
+	select BR2_PACKAGE_ZLIB
+	select BR2_PACKAGE_JPEG
+	help
+	  qpdf11 is a C++ library and command-line tool for structural,
+	  content-preserving transformations of PDF files.
+
+	  This package tracks qpdf 11.x for compatibility with python-pikepdf.
+
+	  https://github.com/qpdf/qpdf
+
+comment "qpdf11 needs a toolchain w/ C++, gcc >= 5"
+	depends on BR2_TOOLCHAIN_HAS_ATOMIC
+	depends on !BR2_INSTALL_LIBSTDCPP || \
+		!BR2_TOOLCHAIN_GCC_AT_LEAST_5
