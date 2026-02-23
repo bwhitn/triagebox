@@ -11,6 +11,19 @@ PYTHON_LIEF_SETUP_TYPE = pep517
 PYTHON_LIEF_LICENSE = Apache License 2.0
 PYTHON_LIEF_DEPENDENCIES = host-cmake host-ninja host-python-pip
 
+define PYTHON_LIEF_FIX_PYCONFIG_HEADER
+	mkdir -p $(PYTHON3_DIR)/Include
+	if [ ! -f $(PYTHON3_DIR)/Include/pyconfig.h ]; then \
+		if [ -f $(PYTHON3_DIR)/pyconfig.h ]; then \
+			ln -sf ../pyconfig.h $(PYTHON3_DIR)/Include/pyconfig.h; \
+		elif [ -f $(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION_MAJOR)/pyconfig.h ]; then \
+			ln -sf $(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION_MAJOR)/pyconfig.h \
+				$(PYTHON3_DIR)/Include/pyconfig.h; \
+		fi; \
+	fi
+endef
+PYTHON_LIEF_PRE_BUILD_HOOKS += PYTHON_LIEF_FIX_PYCONFIG_HEADER
+
 define PYTHON_LIEF_INSTALL_BUILD_REQUIREMENTS
 	rm -rf $(@D)/.lief-wheelhouse
 	mkdir -p $(@D)/.lief-wheelhouse
