@@ -1,2 +1,2 @@
-# sha256 from https://pypi.org/project/tbtrim/#files
-sha256  9cd07c39dbb0f60c53f37c4bb16e5b7ba6ccf886db434c2718d571c6e2f2f390  tbtrim-0.3.1.tar.gz
+# sha256 observed from Buildroot download of tbtrim-0.3.1.tar.gz
+sha256  b6285ac02e9a7b78fab97de65668fe2def0f5d8783b0e0dfcb4b7c0a635b3d11  tbtrim-0.3.1.tar.gz
