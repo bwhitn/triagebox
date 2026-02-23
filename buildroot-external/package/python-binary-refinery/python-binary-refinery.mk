@@ -28,7 +28,7 @@ PYTHON_BINARY_REFINERY_PREFETCHED_REQUIREMENTS_FILE = \
 # deps are not yet present in the host build environment. We install runtime
 # deps separately from wheelhouse downloads below, so bypass both paths.
 define PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
-	$(SED) '/with refinery.__unit_loader__ as ldr:/,+1c\    pass' $(@D)/setup.py
+	$(SED) '/^    with refinery.__unit_loader__ as ldr:$$/{N;s|^    with refinery.__unit_loader__ as ldr:\n        ldr.reload()$$|    pass|;}' $(@D)/setup.py
 	$(SED) 's|extras = get_setup_extras(requirements)|extras = {}|g' $(@D)/setup.py
 endef
 PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
