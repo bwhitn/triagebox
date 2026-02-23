@@ -15,7 +15,7 @@ diff --git a/pyzbar/zbar_library.py b/pyzbar/zbar_library.py
 index 4789f66..660c69c 100644
 --- a/pyzbar/zbar_library.py
 +++ b/pyzbar/zbar_library.py
-@@ -28,6 +28,34 @@ def _windows_fnames():
+@@ -28,6 +28,36 @@ def _windows_fnames():
      return fname, dependencies
  
  
@@ -70,4 +70,3 @@ index 4789f66..660c69c 100644
          dependencies = []
 -- 
 2.47.3
-
