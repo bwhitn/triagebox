@@ -1,2 +1,2 @@
-# sha256 from https://pypi.org/project/pybcj/1.0.7/#files
-sha256  fb133083f6589f89fbc4f51829b62bffb0f6f5f694240f7e4db7ad4f38a9f2e0  pybcj-1.0.7.tar.gz
+# sha256 observed from Buildroot download of pybcj-1.0.7.tar.gz
+sha256  72d64574069ffb0a800020668376b7ebd7adea159adbf4d35f8effc62f0daa67  pybcj-1.0.7.tar.gz
