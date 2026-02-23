@@ -10,4 +10,10 @@ PYTHON_SPARK_PARSER_SITE = https://files.pythonhosted.org/packages/3c/e1/a443990
 PYTHON_SPARK_PARSER_SETUP_TYPE = setuptools
 PYTHON_SPARK_PARSER_LICENSE = UNKNOWN
 
+# spark_parser ships python2-only sample files that fail target compileall.
+define PYTHON_SPARK_PARSER_REMOVE_PY2_EXAMPLES
+	rm -rf $(TARGET_DIR)/usr/lib/python*/site-packages/spark_parser/example/python2
+endef
+PYTHON_SPARK_PARSER_POST_INSTALL_TARGET_HOOKS += PYTHON_SPARK_PARSER_REMOVE_PY2_EXAMPLES
+
 $(eval $(python-package))
