@@ -62,6 +62,7 @@ make build-disk
 - `BUILDROOT_PRIMARY_SITE` (default `https://sources.buildroot.net`)
 - `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
 - `BUILDROOT_GLOBAL_PATCH_DIR` (default `buildroot/patches`; applies local package patches during Buildroot builds)
+- If `BR2_DOWNLOAD_FORCE_CHECK_HASHES=y` from the base defconfig and the pinned kernel patchlevel is no longer present in Buildroot's `linux.hash`, the build script auto-adjusts to the newest hashed patchlevel in the same major/minor series.
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
 - `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)

@@ -245,6 +245,32 @@ make -C "${BUILDROOT_SRC}" \
     PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH=0 \
     PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
     "${BUILDROOT_DEFCONFIG}"
+
+linux_hash_file="${BUILDROOT_SRC}/linux/linux.hash"
+adjusted_linux_kernel_version=""
+disable_force_hashes="0"
+if [[ -f "${linux_hash_file}" ]] && grep -q '^BR2_DOWNLOAD_FORCE_CHECK_HASHES=y$' "${OUT_DIR}/.config"; then
+    configured_linux_kernel_version="$(sed -n 's/^BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="\(.*\)"$/\1/p' "${OUT_DIR}/.config" | head -n1)"
+    if [[ "${configured_linux_kernel_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        if ! grep -Eq "[[:space:]]linux-${configured_linux_kernel_version}\\.tar\\.xz$" "${linux_hash_file}"; then
+            configured_linux_kernel_series="${configured_linux_kernel_version%.*}"
+            adjusted_linux_kernel_version="$(
+                awk '/linux-[0-9]+\.[0-9]+\.[0-9]+\.tar\.xz$/ {print $NF}' "${linux_hash_file}" \
+                    | sed -e 's/^linux-//' -e 's/\.tar\.xz$//' \
+                    | awk -v series="${configured_linux_kernel_series}" '$0 ~ ("^" series "\\.[0-9]+$")' \
+                    | sort -V \
+                    | tail -n1
+            )"
+            if [[ -n "${adjusted_linux_kernel_version}" ]] && [[ "${adjusted_linux_kernel_version}" != "${configured_linux_kernel_version}" ]]; then
+                echo "Adjusting kernel version for hash compatibility: ${configured_linux_kernel_version} -> ${adjusted_linux_kernel_version}"
+            elif [[ -z "${adjusted_linux_kernel_version}" ]]; then
+                echo "No hashed linux tarball found for kernel series ${configured_linux_kernel_series}; disabling BR2_DOWNLOAD_FORCE_CHECK_HASHES." >&2
+                disable_force_hashes="1"
+            fi
+        fi
+    fi
+fi
+
 primary_site="${BUILDROOT_PRIMARY_SITE:-}"
 primary_site_only="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
 case "${BUILD_PROFILE}" in
@@ -271,6 +297,17 @@ BR2_PACKAGE_PYTHON3=y
 BR2_PACKAGE_PYTHON_BINARY_REFINERY=y
 BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
 EOF
+if [[ -n "${adjusted_linux_kernel_version}" ]]; then
+    cat >> "${OUT_DIR}/.config" <<EOF
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="${adjusted_linux_kernel_version}"
+BR2_LINUX_KERNEL_VERSION="${adjusted_linux_kernel_version}"
+EOF
+fi
+if [[ "${disable_force_hashes}" == "1" ]]; then
+    cat >> "${OUT_DIR}/.config" <<EOF
+# BR2_DOWNLOAD_FORCE_CHECK_HASHES is not set
+EOF
+fi
 printf '%s\n' "${optimization_config}" >> "${OUT_DIR}/.config"
 if [[ -s "${refinery_buildroot_symbols}" ]]; then
     cat "${refinery_buildroot_symbols}" >> "${OUT_DIR}/.config"
@@ -651,6 +688,8 @@ build_profile=${BUILD_PROFILE}
 buildroot_global_patch_dir=${BUILDROOT_GLOBAL_PATCH_DIR}
 prefetch_downloads=${PREFETCH_DOWNLOADS}
 prefetch_refinery_wheels=${PREFETCH_REFINERY_WHEELS}
+kernel_version_adjusted_for_hash=$( [[ -n "${adjusted_linux_kernel_version}" ]] && printf '%s' "${adjusted_linux_kernel_version}" || printf 'no')
+download_force_check_hashes_overridden=$( [[ "${disable_force_hashes}" == "1" ]] && printf 'yes' || printf 'no')
 refinery_require_buildroot_target=${REFINERY_REQUIRE_BUILDROOT_TARGET}
 refinery_wheel_strict=${REFINERY_WHEEL_STRICT}
 refinery_sdist_fallback=${REFINERY_SDIST_FALLBACK}
