@@ -19,5 +19,5 @@ window.V86_VM_CONFIG = {
   // Optional VGA knobs when enableVga=true.
   // vgaMemoryMb: 8,
   // vgaBios: "assets/v86/vgabios.bin",
-  asyncDisk: true
+  asyncDisk: false
 };
