@@ -1,0 +1,31 @@
+From 1d5e944d7af4272f0e7d4207f8f99b4f95f07d8d Mon Sep 17 00:00:00 2001
+From: Nixbrowser Buildroot Maintainer <maintainer@example.com>
+Date: Mon, 23 Feb 2026 00:00:00 +0000
+Subject: [PATCH] Cargo.toml: relax rust-version for Buildroot host toolchain
+
+Buildroot 2025.11 ships host Rust 1.88.0. The icicle-emu Python bindings
+currently require 1.90.0 in Cargo metadata, which causes an early hard
+failure before compilation starts.
+
+Set rust-version to 1.88.0 so the package can be built with the host
+toolchain available in this environment.
+---
+ Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index e3f2f4f..df8a4d4 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,7 +1,7 @@
+ [package]
+ name = "icicle-python"
+ edition = "2021"
+-rust-version = "1.90.0"
++rust-version = "1.88.0"
+ readme = "README.md"
+ 
+ [lib]
+-- 
+2.47.0
+
