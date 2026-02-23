@@ -1,0 +1,4 @@
+# sha256 from https://github.com/NaturalHistoryMuseum/pyzbar/archive/refs/tags/v0.1.9.tar.gz
+sha256  6b84ec4c1f36df590c65b610a7757ef8829f202a7df210d2891e6592a8bee8bb  pyzbar-0.1.9.tar.gz
+# Locally computed sha256 checksums
+sha256  c540b5daba66c22b26f91ad1e02a2cdb9b5f08442d0889a50d34b24c03f23b17  LICENSE.txt

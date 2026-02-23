@@ -178,12 +178,23 @@ declare -A refinery_buildroot_seen_symbols=()
 resolve_refinery_requirement() {
     local requirement_line="$1"
     local req_norm
+    local req_norm_no_python_prefix=""
     local req_symbol
 
     req_norm="$(normalize_requirement_name "${requirement_line}")"
+    if [[ "${req_norm}" == python* ]] && (( ${#req_norm} > 6 )); then
+        req_norm_no_python_prefix="${req_norm#python}"
+    fi
 
     if [[ -n "${req_norm}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm]:-}" ]]; then
         req_symbol="${buildroot_python_symbol_by_norm[$req_norm]}"
+    elif [[ -n "${req_norm_no_python_prefix}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm_no_python_prefix]:-}" ]]; then
+        req_symbol="${buildroot_python_symbol_by_norm[$req_norm_no_python_prefix]}"
+    else
+        req_symbol=""
+    fi
+
+    if [[ -n "${req_symbol}" ]]; then
         append_unique_requirement_line "${requirement_line}" "${refinery_buildroot_requirements}"
         printf '%s\t%s\n' "${requirement_line}" "${req_symbol}" >> "${refinery_buildroot_map}"
         if [[ -z "${refinery_buildroot_seen_symbols[$req_symbol]:-}" ]]; then
