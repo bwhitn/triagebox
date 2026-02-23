@@ -19,6 +19,7 @@ BUILDROOT_DEFCONFIG="${BUILDROOT_DEFCONFIG:-qemu_x86_defconfig}"
 BUILDROOT_JOBS="${BUILDROOT_JOBS:-$(nproc)}"
 BUILDROOT_PRIMARY_SITE="${BUILDROOT_PRIMARY_SITE:-https://sources.buildroot.net}"
 BUILDROOT_PRIMARY_SITE_ONLY="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
+BUILDROOT_GLOBAL_PATCH_DIR="${BUILDROOT_GLOBAL_PATCH_DIR:-${ROOT_DIR}/buildroot/patches}"
 BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION:-0.9.26}"
 PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION:-0.17.3}"
 BUILD_PROFILE="${BUILD_PROFILE:-optimized}"
@@ -82,6 +83,10 @@ if [[ ! -d "${OVERLAY_DIR}" ]]; then
 fi
 if [[ ! -d "${BR2_EXTERNAL_DIR}" ]]; then
     echo "Missing Buildroot external directory: ${BR2_EXTERNAL_DIR}" >&2
+    exit 1
+fi
+if [[ -n "${BUILDROOT_GLOBAL_PATCH_DIR}" ]] && [[ ! -d "${BUILDROOT_GLOBAL_PATCH_DIR}" ]]; then
+    echo "BUILDROOT_GLOBAL_PATCH_DIR does not exist: ${BUILDROOT_GLOBAL_PATCH_DIR}" >&2
     exit 1
 fi
 
@@ -279,6 +284,11 @@ EOF
 BR2_PRIMARY_SITE_ONLY=y
 EOF
     fi
+fi
+if [[ -n "${BUILDROOT_GLOBAL_PATCH_DIR}" ]]; then
+    cat >> "${OUT_DIR}/.config" <<EOF
+BR2_GLOBAL_PATCH_DIR="${BUILDROOT_GLOBAL_PATCH_DIR}"
+EOF
 fi
 make -C "${BUILDROOT_SRC}" \
     O="${OUT_DIR}" \
@@ -638,6 +648,7 @@ flavor=buildroot
 buildroot_version=${BUILDROOT_VERSION}
 buildroot_defconfig=${BUILDROOT_DEFCONFIG}
 build_profile=${BUILD_PROFILE}
+buildroot_global_patch_dir=${BUILDROOT_GLOBAL_PATCH_DIR}
 prefetch_downloads=${PREFETCH_DOWNLOADS}
 prefetch_refinery_wheels=${PREFETCH_REFINERY_WHEELS}
 refinery_require_buildroot_target=${REFINERY_REQUIRE_BUILDROOT_TARGET}

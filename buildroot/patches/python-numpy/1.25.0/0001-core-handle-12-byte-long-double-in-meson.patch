@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nixbrowser Build <noreply@example.com>
+Date: Mon, 23 Feb 2026 00:00:00 +0000
+Subject: [PATCH] core: handle 12-byte long double in Meson config
+
+On 32-bit x86, sizeof(long double) can be 12 bytes. NumPy's Meson logic
+in 1.25.0 aborts in this case, which breaks i386/i686 Buildroot target
+builds. Map it to NumPy's existing 12-byte formats instead.
+
+--- a/numpy/core/meson.build
++++ b/numpy/core/meson.build
+@@ -368,8 +368,13 @@ if longdouble_size == 8
+     longdouble_format = 'IEEE_DOUBLE_BE'
+   endif
+ elif longdouble_size == 12
+-  error('This should not be possible, 12 bits of "content" should still result in sizeof() being 16. Please report this error!'
+-  )
++  if host_machine.endian() == 'little'
++    # 80-bit extended precision padded to 12 bytes (common on 32-bit x86).
++    longdouble_format = 'INTEL_EXTENDED_12_BYTES_LE'
++  else
++    # 80-bit extended precision padded to 12 bytes on big-endian targets.
++    longdouble_format = 'MOTOROLA_EXTENDED_12_BYTES_BE'
++  endif
+ elif longdouble_size == 16
+   if host_machine.endian() == 'little'
+     # FIXME: this varies, there's multiple formats here! Not yet implemented.
+-- 
+2.39.5
+
