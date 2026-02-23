@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_TBTRIM
+	bool "python-tbtrim"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Lightweight traceback trimming helper used by pcapkit.
+
+	  https://pypi.org/project/tbtrim/

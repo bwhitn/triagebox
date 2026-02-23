@@ -1,6 +1,8 @@
 config BR2_PACKAGE_PYTHON_DECOMPYLE3
 	bool "python-decompyle3"
 	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_PYTHON_SPARK_PARSER
+	select BR2_PACKAGE_PYTHON_XDIS
 	help
 	  Python cross-version byte-code decompiler
 

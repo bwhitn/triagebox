@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Buildroot External <noreply@example.com>
+Date: Mon, 23 Feb 2026 19:10:00 +0000
+Subject: [PATCH] pyzbar: add linux soname fallback for libzbar loading
+
+On minimal Buildroot targets, ctypes.util.find_library("zbar") can fail
+even when libzbar is installed, because helper tooling such as ldconfig
+may be absent. Fall back to common sonames and library paths before
+raising ImportError.
+---
+ pyzbar/zbar_library.py | 35 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/pyzbar/zbar_library.py b/pyzbar/zbar_library.py
+index 4789f66..660c69c 100644
+--- a/pyzbar/zbar_library.py
++++ b/pyzbar/zbar_library.py
+@@ -28,6 +28,34 @@ def _windows_fnames():
+     return fname, dependencies
+ 
+ 
++def _load_linux_libzbar():
++    # Buildroot-style systems may not provide the external tools that
++    # ctypes.util.find_library() relies on. Try common sonames/paths too.
++    path = find_library('zbar')
++    candidates = []
++
++    if path:
++        candidates.append(path)
++
++    candidates.extend((
++        'libzbar.so.0',
++        'libzbar.so',
++        '/usr/lib/libzbar.so.0',
++        '/usr/lib/libzbar.so',
++        '/lib/libzbar.so.0',
++        '/lib/libzbar.so',
++    ))
++
++    seen = set()
++    for candidate in candidates:
++        if not candidate or candidate in seen:
++            continue
++        seen.add(candidate)
++        try:
++            return cdll.LoadLibrary(candidate)
++        except OSError:
++            pass
++    raise ImportError('Unable to find zbar shared library')
++
++
+ def load():
+     """Loads the libzar shared library and its dependencies.
+     """
+@@ -55,11 +83,14 @@ def load():
+         try:
+             dependencies, libzbar = load_objects(Path(''))
+         except OSError:
+             dependencies, libzbar = load_objects(Path(__file__).parent)
+-    else:
++    elif platform.system() in ('Linux', 'GNU'):
++        libzbar = _load_linux_libzbar()
++        dependencies = []
++    else:
+         # Assume a shared library on the path
+         path = find_library('zbar')
+         if not path:
+             raise ImportError('Unable to find zbar shared library')
+         libzbar = cdll.LoadLibrary(path)
+         dependencies = []
+-- 
+2.47.3
+

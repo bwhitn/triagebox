@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_MULTIVOLUMEFILE
+	bool "python-multivolumefile"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Multi-volume virtual file helper used by py7zr.
+
+	  https://pypi.org/project/multivolumefile/

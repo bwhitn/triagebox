@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_SPARK_PARSER
+	bool "python-spark-parser"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Generic parser framework used by decompyle3 and related tools.
+
+	  https://pypi.org/project/spark-parser/

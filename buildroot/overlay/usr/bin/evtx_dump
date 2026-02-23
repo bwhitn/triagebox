@@ -1,0 +1,26 @@
+#!/usr/bin/python
+import argparse
+import sys
+
+import Evtx.Views as e_views
+from Evtx.Evtx import Evtx
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Dump EVTX records as XML")
+    parser.add_argument("evtx", help="Path to .evtx file")
+    args = parser.parse_args()
+
+    with Evtx(args.evtx) as log:
+        for record in log.records():
+            try:
+                sys.stdout.write(e_views.evtx_record_xml_view(record))
+            except Exception:
+                sys.stdout.write(record.xml())
+            if not str(record.xml()).endswith("\n"):
+                sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

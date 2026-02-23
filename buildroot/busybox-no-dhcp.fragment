@@ -1,0 +1,4 @@
+# Disable BusyBox DHCP client applets so udhcpc is not present in the image.
+# CONFIG_UDHCPC is not set
+# CONFIG_UDHCPC6 is not set
+# CONFIG_UDHCPD is not set

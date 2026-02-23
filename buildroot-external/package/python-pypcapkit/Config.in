@@ -1,6 +1,7 @@
 config BR2_PACKAGE_PYTHON_PYPCAPKIT
 	bool "python-pypcapkit"
 	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_PYTHON_TBTRIM
 	help
 	  PyPCAPKit: comprehensive network packet analysis library
 
