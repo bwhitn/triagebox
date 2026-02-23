@@ -41,6 +41,7 @@
   let serialResizeObserver = null;
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
+  let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
@@ -159,6 +160,13 @@
     downloadProgressEl.value = bounded;
   }
 
+  function clearDownloadHideTimer() {
+    if (downloadHideTimer) {
+      clearTimeout(downloadHideTimer);
+      downloadHideTimer = null;
+    }
+  }
+
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes < 0) {
       return "n/a";
@@ -184,6 +192,7 @@
   }
 
   function beginDownloadMeter() {
+    clearDownloadHideTimer();
     downloadFileProgress = new Map();
     downloadFileCount = 0;
     sawDownloadProgress = false;
@@ -196,6 +205,7 @@
   function handleDownloadProgress(info) {
     const evt = info && typeof info === "object" ? info : {};
     sawDownloadProgress = true;
+    clearDownloadHideTimer();
     setDownloadVisible(true);
 
     if (Number.isFinite(evt.file_count) && evt.file_count > 0) {
@@ -239,12 +249,14 @@
 
   function handleDownloadError(info) {
     const evt = info && typeof info === "object" ? info : {};
+    clearDownloadHideTimer();
     setDownloadVisible(true);
     setDownloadStatus("error");
     setDownloadDetail(`failed to fetch ${basename(evt.file_name)}`);
   }
 
   function completeDownloadMeter() {
+    clearDownloadHideTimer();
     setDownloadVisible(true);
     setDownloadProgress(100);
     if (sawDownloadProgress) {
@@ -254,6 +266,10 @@
       setDownloadStatus("complete (cached)");
       setDownloadDetail("assets already available");
     }
+    downloadHideTimer = window.setTimeout(() => {
+      downloadHideTimer = null;
+      setDownloadVisible(false);
+    }, 1200);
   }
 
   function startSampling() {
@@ -417,10 +433,11 @@
     const rootFsType = typeof config.rootFsType === "string" && config.rootFsType.trim().length > 0
       ? config.rootFsType.trim()
       : "ext4";
-    const defaultCmdlineNoSerial = `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=tty0`;
+    const defaultCmdlineBase = `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init ip=off net.ifnames=0`;
+    const defaultCmdlineNoSerial = `${defaultCmdlineBase} console=tty0`;
     const defaultCmdlineSerial = vgaEnabled
-      ? `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=ttyS0 console=tty0`
-      : `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init console=ttyS0`;
+      ? `${defaultCmdlineBase} console=ttyS0 console=tty0`
+      : `${defaultCmdlineBase} console=ttyS0`;
     const cmdline = typeof config.cmdline === "string" && config.cmdline.trim().length > 0
       ? config.cmdline
       : (serialEnabled ? defaultCmdlineSerial : defaultCmdlineNoSerial);
@@ -543,8 +560,6 @@
     try {
       if (!emulator) {
         beginDownloadMeter();
-      } else {
-        setDownloadVisible(true);
       }
       const vm = ensureEmulator();
       if (emulatorReadyPromise) {

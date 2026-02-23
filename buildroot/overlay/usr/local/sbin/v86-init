@@ -8,6 +8,11 @@ mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sysfs /sys 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
 chmod 1777 /tmp 2>/dev/null || true
+if command -v ip >/dev/null 2>&1; then
+    ip link set lo up 2>/dev/null || true
+elif command -v ifconfig >/dev/null 2>&1; then
+    ifconfig lo up 2>/dev/null || true
+fi
 
 echo ""
 echo "Buildroot Linux running on v86"
