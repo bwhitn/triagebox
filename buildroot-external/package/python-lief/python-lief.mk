@@ -12,10 +12,17 @@ PYTHON_LIEF_LICENSE = Apache License 2.0
 PYTHON_LIEF_DEPENDENCIES = host-cmake host-ninja host-python-pip
 
 define PYTHON_LIEF_INSTALL_BUILD_REQUIREMENTS
+	rm -rf $(@D)/.lief-wheelhouse
+	mkdir -p $(@D)/.lief-wheelhouse
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \
-	$(HOST_DIR)/bin/python3 -m pip install --no-cache-dir \
+	python3 -m pip download --only-binary=:all: --dest $(@D)/.lief-wheelhouse \
 		-r $(@D)/api/python/build-requirements.txt
+	PIP_DISABLE_PIP_VERSION_CHECK=1 \
+	PIP_NO_CACHE_DIR=1 \
+	$(HOST_DIR)/bin/python3 -m pip install --no-index --find-links $(@D)/.lief-wheelhouse \
+		-r $(@D)/api/python/build-requirements.txt
+	rm -rf $(@D)/.lief-wheelhouse
 endef
 PYTHON_LIEF_PRE_BUILD_HOOKS += PYTHON_LIEF_INSTALL_BUILD_REQUIREMENTS
 
