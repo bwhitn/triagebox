@@ -16,6 +16,7 @@ BUILDROOT_ARCHIVE_URL="${BUILDROOT_ARCHIVE_URL:-https://buildroot.org/downloads/
 BUILDROOT_ARCHIVE="${WORK_DIR}/buildroot-${BUILDROOT_VERSION}.tar.xz"
 BUILDROOT_SRC="${SRC_PARENT}/buildroot-${BUILDROOT_VERSION}"
 BUILDROOT_DEFCONFIG="${BUILDROOT_DEFCONFIG:-qemu_x86_defconfig}"
+BUILDROOT_RESUME="${BUILDROOT_RESUME:-0}"
 BUILDROOT_JOBS="${BUILDROOT_JOBS:-$(nproc)}"
 BUILDROOT_PRIMARY_SITE="${BUILDROOT_PRIMARY_SITE:-https://sources.buildroot.net}"
 BUILDROOT_PRIMARY_SITE_ONLY="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
@@ -71,6 +72,10 @@ if [[ -z "${REFINERY_WHEEL_PLATFORM_PRIMARY}" ]] || [[ -z "${REFINERY_WHEEL_PLAT
 fi
 if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" != "0" ]] && [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" != "1" ]]; then
     echo "REFINERY_REQUIRE_BUILDROOT_TARGET must be 0 or 1 (got: ${REFINERY_REQUIRE_BUILDROOT_TARGET})" >&2
+    exit 1
+fi
+if [[ "${BUILDROOT_RESUME}" != "0" ]] && [[ "${BUILDROOT_RESUME}" != "1" ]]; then
+    echo "BUILDROOT_RESUME must be 0 or 1 (got: ${BUILDROOT_RESUME})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -233,7 +238,13 @@ done < "${refinery_requirements_source}"
 resolve_refinery_requirement "lief==${PYTHON_LIEF_VERSION}"
 
 echo "[2/8] Configuring Buildroot (${BUILDROOT_DEFCONFIG})"
-rm -rf "${OUT_DIR}"
+if [[ "${BUILDROOT_RESUME}" == "1" ]]; then
+    if [[ -d "${OUT_DIR}" ]]; then
+        echo "Resume mode enabled; reusing Buildroot output directory: ${OUT_DIR}"
+    fi
+else
+    rm -rf "${OUT_DIR}"
+fi
 make -C "${BUILDROOT_SRC}" \
     O="${OUT_DIR}" \
     BR2_DL_DIR="${DL_DIR}" \
@@ -684,6 +695,7 @@ built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 flavor=buildroot
 buildroot_version=${BUILDROOT_VERSION}
 buildroot_defconfig=${BUILDROOT_DEFCONFIG}
+buildroot_resume=${BUILDROOT_RESUME}
 build_profile=${BUILD_PROFILE}
 buildroot_global_patch_dir=${BUILDROOT_GLOBAL_PATCH_DIR}
 prefetch_downloads=${PREFETCH_DOWNLOADS}

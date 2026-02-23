@@ -23,6 +23,16 @@ PYTHON_BINARY_REFINERY_REQUIREMENTS_FILE = \
 PYTHON_BINARY_REFINERY_PREFETCHED_REQUIREMENTS_FILE = \
 	$(PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR)/requirements-resolved.txt
 
+# binary-refinery setup.py eagerly reloads all units and dynamically computes
+# extras during wheel build. That aborts cross-builds when optional runtime
+# deps are not yet present in the host build environment. We install runtime
+# deps separately from wheelhouse downloads below, so bypass both paths.
+define PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
+	$(SED) '/with refinery.__unit_loader__ as ldr:/,+1c\    pass' $(@D)/setup.py
+	$(SED) 's|extras = get_setup_extras(requirements)|extras = {}|g' $(@D)/setup.py
+endef
+PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
+
 define PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
 	rm -rf $(@D)/wheelhouse
 	mkdir -p $(@D)/wheelhouse

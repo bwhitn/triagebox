@@ -53,11 +53,18 @@ Build just the disk/kernel/initrd artifacts:
 make build-disk
 ```
 
+Resume a failed Buildroot disk build without deleting `.work/buildroot/output`:
+
+```bash
+make build-disk-resume
+```
+
 ## Build knobs
 
 - `BUILDROOT_VERSION` (default `2025.11.1`)
 - `BUILDROOT_ARCHIVE_URL` (default points to buildroot.org tarball for that version)
 - `BUILDROOT_DEFCONFIG` (default `qemu_x86_defconfig`)
+- `BUILDROOT_RESUME` (default `0`; set `1` to reuse existing Buildroot output dir and continue failed builds)
 - `BUILDROOT_JOBS` (default `nproc`)
 - `BUILDROOT_PRIMARY_SITE` (default `https://sources.buildroot.net`)
 - `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
