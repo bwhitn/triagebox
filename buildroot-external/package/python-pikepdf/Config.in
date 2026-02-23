@@ -1,6 +1,7 @@
 config BR2_PACKAGE_PYTHON_PIKEPDF
 	bool "python-pikepdf"
 	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_QPDF
 	help
 	  Read and write PDFs with Python, powered by qpdf
 
