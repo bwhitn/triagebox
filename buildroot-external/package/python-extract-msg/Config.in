@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_EXTRACT_MSG
+	bool "python-extract-msg"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Extracts emails and attachments saved in Microsoft Outlook's .msg files
+
+	  https://github.com/TeamMsgExtractor/msg-extractor

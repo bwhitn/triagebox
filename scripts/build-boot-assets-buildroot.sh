@@ -127,6 +127,11 @@ normalize_requirement_name() {
     printf '%s' "$(printf '%s' "${req_name}" | tr -cd '[:alnum:]')"
 }
 
+normalize_package_base_name() {
+    local package_base="$1"
+    printf '%s' "$(printf '%s' "${package_base,,}" | tr -cd '[:alnum:]')"
+}
+
 append_unique_requirement_line() {
     local line="$1"
     local file="$2"
@@ -136,18 +141,37 @@ append_unique_requirement_line() {
 }
 
 declare -A buildroot_python_symbol_by_norm=()
-for package_dir in "${BUILDROOT_SRC}"/package/python-*; do
-    [[ -d "${package_dir}" ]] || continue
-    package_name="$(basename "${package_dir}")"
-    package_base="${package_name#python-}"
-    package_norm="$(printf '%s' "${package_base,,}" | tr -cd '[:alnum:]')"
+register_python_package_symbol() {
+    local package_name="$1"
+    local package_base="${package_name#python-}"
+    local package_norm
+    local package_symbol
+    local package_norm_without_python_prefix=""
+
+    package_norm="$(normalize_package_base_name "${package_base}")"
     if [[ -z "${package_norm}" ]]; then
-        continue
+        return
     fi
+    package_symbol="BR2_PACKAGE_$(printf '%s' "${package_name}" | tr '[:lower:]-.' '[:upper:]__')"
     if [[ -z "${buildroot_python_symbol_by_norm[$package_norm]:-}" ]]; then
-        package_symbol="BR2_PACKAGE_$(printf '%s' "${package_name}" | tr '[:lower:]-.' '[:upper:]__')"
         buildroot_python_symbol_by_norm["${package_norm}"]="${package_symbol}"
     fi
+
+    if [[ "${package_norm}" == python* ]] && (( ${#package_norm} > 6 )); then
+        package_norm_without_python_prefix="${package_norm#python}"
+        if [[ -n "${package_norm_without_python_prefix}" ]] && [[ -z "${buildroot_python_symbol_by_norm[$package_norm_without_python_prefix]:-}" ]]; then
+            buildroot_python_symbol_by_norm["${package_norm_without_python_prefix}"]="${package_symbol}"
+        fi
+    fi
+}
+
+for package_dir in "${BUILDROOT_SRC}"/package/python-*; do
+    [[ -d "${package_dir}" ]] || continue
+    register_python_package_symbol "$(basename "${package_dir}")"
+done
+for package_dir in "${BR2_EXTERNAL_DIR}"/package/python-*; do
+    [[ -d "${package_dir}" ]] || continue
+    register_python_package_symbol "$(basename "${package_dir}")"
 done
 
 declare -A refinery_buildroot_seen_symbols=()
@@ -277,6 +301,8 @@ if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" == "1" ]]; then
         cp "${refinery_buildroot_required_missing}" "${REFINERY_MISSING_BUILDROOT_REPORT}"
         missing_buildroot_count="$(wc -l < "${refinery_buildroot_required_missing}" | awk '{print $1}')"
         echo "Missing Buildroot target package coverage for ${missing_buildroot_count} binary-refinery optional requirement(s)." >&2
+        echo "Missing requirements:" >&2
+        sed 's/^/  - /' "${refinery_buildroot_required_missing}" >&2
         echo "See: ${REFINERY_MISSING_BUILDROOT_REPORT}" >&2
         echo "Create Buildroot packages for these requirements or set REFINERY_REQUIRE_BUILDROOT_TARGET=0 to allow pip wheel resolution." >&2
         exit 1

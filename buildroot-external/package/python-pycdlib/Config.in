@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYCDLIB
+	bool "python-pycdlib"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Pure python ISO manipulation library
+
+	  http://github.com/clalancette/pycdlib

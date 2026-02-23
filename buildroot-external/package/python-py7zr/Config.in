@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PY7ZR
+	bool "python-py7zr"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Pure python 7-zip library
+
+	  https://pypi.org/project/py7zr/

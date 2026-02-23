@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_OPENPYXL
+	bool "python-openpyxl"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  A Python library to read/write Excel 2010 xlsx/xlsm files
+
+	  https://openpyxl.readthedocs.io

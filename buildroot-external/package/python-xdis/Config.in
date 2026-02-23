@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_XDIS
+	bool "python-xdis"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python cross-version byte-code disassembler and marshal routines
+
+	  https://github.com/rocky/python-xdis/

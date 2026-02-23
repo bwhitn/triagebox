@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_ICICLE_EMU
+	bool "python-icicle-emu"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python bindings for the Icicle emulator.
+
+	  https://pypi.org/project/icicle-emu/

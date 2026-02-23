@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYPERCLIP
+	bool "python-pyperclip"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  A cross-platform clipboard module for Python. (Only handles plain text for now.)
+
+	  https://pypi.org/project/pyperclip/

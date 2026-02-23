@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_UNICORN
+	bool "python-unicorn"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Unicorn CPU emulator engine
+
+	  https://pypi.org/project/unicorn/

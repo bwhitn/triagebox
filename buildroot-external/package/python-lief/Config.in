@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_LIEF
+	bool "python-lief"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Library to instrument executable formats
+
+	  https://pypi.org/project/lief/

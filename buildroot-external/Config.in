@@ -1,3 +1,4 @@
 menu "Nixbrowser packages"
 	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-binary-refinery/Config.in"
+	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/refinery-generated-deps/Config.in"
 endmenu

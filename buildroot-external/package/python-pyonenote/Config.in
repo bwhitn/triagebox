@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYONENOTE
+	bool "python-pyonenote"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  pyOneNote is a lightweight python library to read OneNote files. The main goal of this parser is to allow cybersecurity analyst to extract useful information, such as embedded files, from OneNote files.
+
+	  https://github.com/DissectMalware/pyOneNote

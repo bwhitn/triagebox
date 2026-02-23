@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_LNKPARSE3
+	bool "python-lnkparse3"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Windows Shortcut file (LNK) parser
+
+	  https://github.com/Matmaus/LnkParse

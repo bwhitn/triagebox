@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_LZNT1
+	bool "python-lznt1"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python module for LZNT1 compression/decompression
+
+	  https://github.com/you0708/lznt1/

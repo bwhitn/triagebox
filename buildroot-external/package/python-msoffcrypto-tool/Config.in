@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_MSOFFCRYPTO_TOOL
+	bool "python-msoffcrypto-tool"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python tool and library for decrypting and encrypting MS Office files using a password or other keys
+
+	  https://github.com/nolze/msoffcrypto-tool

@@ -424,25 +424,38 @@
     const cmdline = typeof config.cmdline === "string" && config.cmdline.trim().length > 0
       ? config.cmdline
       : (serialEnabled ? defaultCmdlineSerial : defaultCmdlineNoSerial);
+    const networkRelayUrl = typeof config.networkRelayUrl === "string" && config.networkRelayUrl.trim().length > 0
+      ? config.networkRelayUrl.trim()
+      : "";
+    const netDeviceType = typeof config.netDeviceType === "string" && config.netDeviceType.trim().length > 0
+      ? config.netDeviceType.trim().toLowerCase()
+      : ((config.enableEthernet === true || networkRelayUrl.length > 0) ? "ne2k" : "none");
 
     const vmOptions = {
       wasm_path: config.wasmPath || "assets/v86/v86.wasm",
       memory_size: (config.memoryMb || 512) * 1024 * 1024,
       bios: { url: config.bios || "assets/v86/seabios.bin" },
-      vga_bios: { url: config.vgaBios || "assets/v86/vgabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
       hda: { url: config.diskImage || "assets/buildroot-linux.img", async: config.asyncDisk === true },
       cmdline,
+      net_device: { type: netDeviceType },
       disable_keyboard: !vgaEnabled,
       disable_mouse: !vgaEnabled,
       disable_speaker: true,
       boot_order: 0x132,
       autostart: false
     };
+    if (netDeviceType === "none") {
+      vmOptions.disable_ne2k = true;
+    }
     if (vgaEnabled) {
+      vmOptions.vga_bios = { url: config.vgaBios || "assets/v86/vgabios.bin" };
       vmOptions.vga_memory_size = (config.vgaMemoryMb || 8) * 1024 * 1024;
       vmOptions.screen_container = document.getElementById("screen_container");
+    }
+    if (networkRelayUrl.length > 0 && netDeviceType !== "none") {
+      vmOptions.network_relay_url = networkRelayUrl;
     }
     if (serialEnabled) {
       if (!serialUseXterm || !serialXtermEl) {

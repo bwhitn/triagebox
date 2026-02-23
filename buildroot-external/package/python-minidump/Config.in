@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_MINIDUMP
+	bool "python-minidump"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python library to parse Windows minidump file format
+
+	  https://github.com/skelsec/minidump

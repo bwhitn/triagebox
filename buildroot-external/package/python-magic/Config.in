@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_MAGIC
+	bool "python-magic"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  File type identification using libmagic
+
+	  http://github.com/ahupp/python-magic

@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_XLRD2
+	bool "python-xlrd2"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Library for developers to extract data from Microsoft Excel legacy spreadsheet files (xls)
+
+	  https://pypi.org/project/xlrd2/

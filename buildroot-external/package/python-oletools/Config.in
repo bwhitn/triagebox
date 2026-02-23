@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_OLETOOLS
+	bool "python-oletools"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python tools to analyze security characteristics of MS Office and OLE files (also called Structured Storage, Compound File Binary Format or Compound Document File Format), for Malware Analysis and Incident Response #DFIR
+
+	  https://github.com/decalage2/oletools

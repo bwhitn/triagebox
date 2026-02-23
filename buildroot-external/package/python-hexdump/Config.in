@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_HEXDUMP
+	bool "python-hexdump"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  dump binary data to hex format and restore from there
+
+	  https://bitbucket.org/techtonik/hexdump/

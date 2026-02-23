@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_UNCOMPYLE6
+	bool "python-uncompyle6"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python cross-version byte-code decompiler
+
+	  https://github.com/rocky/python-uncompyle6/

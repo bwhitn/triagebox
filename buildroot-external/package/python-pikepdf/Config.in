@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PIKEPDF
+	bool "python-pikepdf"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Read and write PDFs with Python, powered by qpdf
+
+	  https://pypi.org/project/pikepdf/

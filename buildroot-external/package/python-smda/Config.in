@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_SMDA
+	bool "python-smda"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  A recursive disassmbler optimized for CFG recovery from memory dumps. Based on capstone.
+
+	  https://github.com/danielplohmann/smda

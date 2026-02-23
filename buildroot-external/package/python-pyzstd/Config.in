@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYZSTD
+	bool "python-pyzstd"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Support for Zstandard (zstd) compression
+
+	  https://pypi.org/project/pyzstd/

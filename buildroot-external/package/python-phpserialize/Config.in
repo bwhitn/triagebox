@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PHPSERIALIZE
+	bool "python-phpserialize"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  a port of the serialize and unserialize functions of php to python.
+
+	  http://github.com/mitsuhiko/phpserialize

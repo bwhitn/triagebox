@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_DECOMPYLE3
+	bool "python-decompyle3"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Python cross-version byte-code decompiler
+
+	  https://github.com/rocky/python-decompile3/

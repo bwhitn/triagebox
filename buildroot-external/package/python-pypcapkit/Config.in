@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYPCAPKIT
+	bool "python-pypcapkit"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  PyPCAPKit: comprehensive network packet analysis library
+
+	  https://pypi.org/project/pypcapkit/

@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_JAVAOBJ_PY3
+	bool "python-javaobj-py3"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Module for serializing and de-serializing Java objects.
+
+	  https://github.com/tcalmant/python-javaobj

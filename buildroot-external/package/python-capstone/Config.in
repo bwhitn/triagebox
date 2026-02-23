@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_CAPSTONE
+	bool "python-capstone"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Capstone disassembly engine
+
+	  https://www.capstone-engine.org

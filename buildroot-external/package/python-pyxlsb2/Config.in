@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYXLSB2
+	bool "python-pyxlsb2"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Excel 2007+ Binary Workbook (xlsb) parser
+
+	  https://github.com/DissectMalware/pyxlsb2

@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_SPEAKEASY_EMULATOR_REFINED
+	bool "python-speakeasy-emulator-refined"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Speakeasy malware emulation framework
+
+	  https://github.com/binref/speakeasy

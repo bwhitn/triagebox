@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_REGISTRY
+	bool "python-registry"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Read access to Windows Registry files.
+
+	  http://www.williballenthin.com/registry/

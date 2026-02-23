@@ -3,7 +3,7 @@
 This repository provides a minimal Buildroot-based v86 setup with:
 
 - Buildroot guest root filesystem (`qemu_x86_defconfig`)
-- No audio, no CD-ROM image, no floppy image, no networking relay, and mouse disabled
+- No audio, no CD-ROM image, no floppy image, serial console first, and mouse disabled
 - Serial console enabled by default (can be disabled at build time)
 - 512MB RAM default
 - Lightweight runtime throughput display (`instructions/sec`)
@@ -14,7 +14,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `buildroot-external/`: custom Buildroot package metadata (includes `python-binary-refinery`)
 - `scripts/build-boot-assets-buildroot.sh`: builds guest artifacts (`buildroot-linux.img`, `vmlinuz`, `initrd.img`)
 - `scripts/write-build-config.sh`: writes build-time UI flags
-- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, VGA BIOS, and xterm assets
+- `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, and xterm assets (VGA BIOS optional)
 - `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
 
@@ -92,6 +92,7 @@ make build-disk
 - `SHRINK_PAD_MB` (default `2`)
 - `SHRINK_MIN_MB` (default `0`)
 - `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
+- `FETCH_VGA_BIOS` (default `0`; set `1` only when you enable VGA output)
 
 Binary-refinery note:
 
@@ -118,6 +119,7 @@ BUILD_PROFILE=optimized make build-disk
 BUILD_PROFILE=fast make build-disk
 PREFETCH_DOWNLOADS=0 make build-disk
 PREFETCH_REFINERY_WHEELS=0 make build-disk
+FETCH_VGA_BIOS=1 make fetch-v86
 REFINERY_REQUIRE_BUILDROOT_TARGET=1 make build-disk
 REFINERY_REQUIRE_BUILDROOT_TARGET=0 make build-disk
 REFINERY_SDIST_FALLBACK=0 make build-disk
@@ -205,10 +207,12 @@ Edit `public/vm-config.js`:
 - `cmdline` override is optional (if empty, app.js uses defaults)
 - `rootFsType` is injected at build time as `ext2`
 - `enableSerial` defaults to `true` (build flag can override via `public/build-config.js`)
+- `enableVga` defaults to `false` (serial-only UI; no VGA BIOS/device attached)
+- `enableEthernet` defaults to `false` (guest loopback only; no emulated ethernet controller)
 - `asyncDisk` defaults to `false` unless your server supports HTTP byte ranges
 
 ## Notes
 
 - v86 exposes a single emulated CPU in this setup.
-- No networking relay is configured.
+- No networking relay is configured and no emulated ethernet NIC is attached by default.
 - No floppy/CD images are attached.

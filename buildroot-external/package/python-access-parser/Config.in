@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_ACCESS_PARSER
+	bool "python-access-parser"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Access database (*.mdb, *.accdb) parser
+
+	  https://github.com/ClarotyICS/access_parser

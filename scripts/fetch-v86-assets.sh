@@ -6,6 +6,12 @@ ASSETS_DIR="${ROOT_DIR}/public/assets/v86"
 XTERM_DIR="${ROOT_DIR}/public/assets/xterm"
 PRIMARY_BASE_URL="${V86_BASE_URL:-https://copy.sh/v86}"
 XTERM_VERSION="${XTERM_VERSION:-5.5.0}"
+FETCH_VGA_BIOS="${FETCH_VGA_BIOS:-0}"
+
+if [[ "${FETCH_VGA_BIOS}" != "0" && "${FETCH_VGA_BIOS}" != "1" ]]; then
+    echo "FETCH_VGA_BIOS must be 0 or 1 (got: ${FETCH_VGA_BIOS})" >&2
+    exit 1
+fi
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -87,7 +93,9 @@ fetch_xterm() {
 fetch_v86 "build/libv86.js" "libv86.js"
 fetch_v86 "build/v86.wasm" "v86.wasm"
 fetch_v86 "bios/seabios.bin" "seabios.bin"
-fetch_v86 "bios/vgabios.bin" "vgabios.bin"
+if [[ "${FETCH_VGA_BIOS}" == "1" ]]; then
+    fetch_v86 "bios/vgabios.bin" "vgabios.bin"
+fi
 
 fetch_xterm "js" "xterm.js"
 fetch_xterm "css" "xterm.css"

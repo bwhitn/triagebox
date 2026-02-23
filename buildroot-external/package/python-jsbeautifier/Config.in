@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_JSBEAUTIFIER
+	bool "python-jsbeautifier"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  JavaScript unobfuscator and beautifier.
+
+	  https://beautifier.io

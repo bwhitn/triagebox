@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYPPMD
+	bool "python-pyppmd"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  PPMd compression/decompression library
+
+	  https://pypi.org/project/pyppmd/

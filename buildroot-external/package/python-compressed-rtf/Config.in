@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_COMPRESSED_RTF
+	bool "python-compressed-rtf"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Compressed Rich Text Format (RTF) compression and decompression package
+
+	  https://github.com/delimitry/compressed_rtf
