@@ -10,4 +10,11 @@ PYTHON_SPEAKEASY_EMULATOR_REFINED_SITE = https://files.pythonhosted.org/packages
 PYTHON_SPEAKEASY_EMULATOR_REFINED_SETUP_TYPE = setuptools
 PYTHON_SPEAKEASY_EMULATOR_REFINED_LICENSE = UNKNOWN
 
+define PYTHON_SPEAKEASY_EMULATOR_REFINED_ENSURE_REQUIREMENTS
+	if [ ! -f $(@D)/requirements.txt ]; then \
+		printf '%s\n' '# Buildroot shim: sdist is missing requirements.txt' > $(@D)/requirements.txt; \
+	fi
+endef
+PYTHON_SPEAKEASY_EMULATOR_REFINED_POST_PATCH_HOOKS += PYTHON_SPEAKEASY_EMULATOR_REFINED_ENSURE_REQUIREMENTS
+
 $(eval $(python-package))
