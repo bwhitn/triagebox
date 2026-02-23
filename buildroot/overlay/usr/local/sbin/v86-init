@@ -14,6 +14,12 @@ elif command -v ifconfig >/dev/null 2>&1; then
     ifconfig lo up 2>/dev/null || true
 fi
 
+case "${TERM:-}" in
+    ""|linux|vt100|vt220)
+        export TERM=xterm
+        ;;
+esac
+
 echo ""
 echo "Buildroot Linux running on v86"
 echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."
@@ -21,11 +27,11 @@ echo ""
 
 launch_shell() {
     if command -v cttyhack >/dev/null 2>&1; then
-        setsid cttyhack /bin/sh
+        setsid cttyhack /bin/sh -l
         return
     fi
     if /bin/busybox --list 2>/dev/null | grep -qx "cttyhack"; then
-        setsid /bin/busybox cttyhack /bin/sh
+        setsid /bin/busybox cttyhack /bin/sh -l
         return
     fi
     if [ -c /dev/ttyS0 ]; then
@@ -33,11 +39,11 @@ launch_shell() {
         # open ttyS0 as a session leader so it becomes controlling TTY.
         setsid /bin/sh -c '
             stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 || true
-            exec /bin/sh < /dev/ttyS0 > /dev/ttyS0 2>&1
+            exec /bin/sh -l < /dev/ttyS0 > /dev/ttyS0 2>&1
         '
         return
     fi
-    /bin/sh
+    /bin/sh -l
 }
 
 while true; do
