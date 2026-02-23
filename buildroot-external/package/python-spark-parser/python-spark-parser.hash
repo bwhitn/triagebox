@@ -1,2 +1,2 @@
-# sha256 from https://pypi.org/project/spark-parser/#files
-sha256  ccf88f74f6f4ec321ecdb68a77e6ce4ba882f57b8c3f8ebbe2d2a17208256595  spark_parser-1.9.0.tar.gz
+# sha256 observed from Buildroot download of spark_parser-1.9.0.tar.gz
+sha256  dc66d48c4265c4133db41a9c5fe9c1c502b3b20167df158a0f234cd31712cf64  spark_parser-1.9.0.tar.gz
