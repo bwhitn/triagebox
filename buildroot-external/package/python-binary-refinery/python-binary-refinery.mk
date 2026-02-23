@@ -30,13 +30,15 @@ PYTHON_BINARY_REFINERY_PREFETCHED_REQUIREMENTS_FILE = \
 define PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
 	$(SED) '/^    with refinery.__unit_loader__ as ldr:$$/{N;s|^    with refinery.__unit_loader__ as ldr:\n        ldr.reload()$$|    pass|;}' $(@D)/setup.py
 	$(SED) 's|extras = get_setup_extras(requirements)|extras = {}|g' $(@D)/setup.py
-	$(SED) '/^\[build-system\]/,/^build-backend =/c\[build-system]\
-requires = [\
-    "setuptools",\
-    "toml",\
-    "wheel",\
-]\
-build-backend = "setuptools.build_meta"' $(@D)/pyproject.toml
+	cat > $(@D)/pyproject.toml <<-'__PYPROJECT__'
+	[build-system]
+	requires = [
+	    "setuptools",
+	    "toml",
+	    "wheel",
+	]
+	build-backend = "setuptools.build_meta"
+	__PYPROJECT__
 endef
 PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
 
