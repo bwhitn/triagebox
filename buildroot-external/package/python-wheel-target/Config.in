@@ -1,5 +1,5 @@
-config BR2_PACKAGE_PYTHON_WHEEL
-	bool "python-wheel"
+config BR2_PACKAGE_PYTHON_WHEEL_TARGET
+	bool "python-wheel-target"
 	depends on BR2_PACKAGE_PYTHON3
 	help
 	  Build and install Python wheel archives.

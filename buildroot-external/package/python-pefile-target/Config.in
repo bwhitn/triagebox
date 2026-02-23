@@ -1,5 +1,5 @@
-config BR2_PACKAGE_PYTHON_PEFILE
-	bool "python-pefile"
+config BR2_PACKAGE_PYTHON_PEFILE_TARGET
+	bool "python-pefile-target"
 	depends on BR2_PACKAGE_PYTHON3
 	help
 	  Read and work with Portable Executable (PE) files.

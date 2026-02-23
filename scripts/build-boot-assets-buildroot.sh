@@ -167,14 +167,20 @@ register_python_package_symbol() {
 
 for package_dir in "${BUILDROOT_SRC}"/package/python-*; do
     [[ -d "${package_dir}" ]] || continue
+    [[ -f "${package_dir}/Config.in" ]] || continue
     register_python_package_symbol "$(basename "${package_dir}")"
 done
 for package_dir in "${BR2_EXTERNAL_DIR}"/package/python-*; do
     [[ -d "${package_dir}" ]] || continue
+    [[ -f "${package_dir}/Config.in" ]] || continue
     register_python_package_symbol "$(basename "${package_dir}")"
 done
 
 declare -A refinery_buildroot_seen_symbols=()
+declare -A refinery_requirement_symbol_alias=(
+    [pefile]="BR2_PACKAGE_PYTHON_PEFILE_TARGET"
+    [wheel]="BR2_PACKAGE_PYTHON_WHEEL_TARGET"
+)
 resolve_refinery_requirement() {
     local requirement_line="$1"
     local req_norm
@@ -186,12 +192,15 @@ resolve_refinery_requirement() {
         req_norm_no_python_prefix="${req_norm#python}"
     fi
 
-    if [[ -n "${req_norm}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm]:-}" ]]; then
+    req_symbol="${refinery_requirement_symbol_alias[$req_norm]:-}"
+    if [[ -z "${req_symbol}" ]] && [[ -n "${req_norm_no_python_prefix}" ]]; then
+        req_symbol="${refinery_requirement_symbol_alias[$req_norm_no_python_prefix]:-}"
+    fi
+
+    if [[ -z "${req_symbol}" ]] && [[ -n "${req_norm}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm]:-}" ]]; then
         req_symbol="${buildroot_python_symbol_by_norm[$req_norm]}"
-    elif [[ -n "${req_norm_no_python_prefix}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm_no_python_prefix]:-}" ]]; then
+    elif [[ -z "${req_symbol}" ]] && [[ -n "${req_norm_no_python_prefix}" ]] && [[ -n "${buildroot_python_symbol_by_norm[$req_norm_no_python_prefix]:-}" ]]; then
         req_symbol="${buildroot_python_symbol_by_norm[$req_norm_no_python_prefix]}"
-    else
-        req_symbol=""
     fi
 
     if [[ -n "${req_symbol}" ]]; then
