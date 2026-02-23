@@ -1,2 +1,2 @@
-# sha256 from https://pypi.org/project/untangle/1.2.1/#files
-sha256  aea372257d8df4b271f97c4e6dc3d7b3f7f3f3637a71ef9f9f3f472893a976b4  untangle-1.2.1.tar.gz
+# sha256 observed from Buildroot download of untangle-1.2.1.tar.gz
+sha256  ae76522472722b31b303d5100c3c6f8b7dd4952b7b6c9d31e6d7b4a56f1a6d30  untangle-1.2.1.tar.gz
