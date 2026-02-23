@@ -1,0 +1,31 @@
+From 4f4e0d3de9377163b8651d16fa1a77ac5de26f50 Mon Sep 17 00:00:00 2001
+From: Nixbrowser Buildroot Maintainer <maintainer@example.com>
+Date: Mon, 23 Feb 2026 00:00:00 +0000
+Subject: [PATCH] icicle-cpu: use arch-safe sentinel for unknown block id
+
+The current unknown-block sentinel literal (0xbadbadbadbad) does not fit in
+usize on 32-bit targets, and icicle-cpu enables deny(overflowing_literals).
+This breaks i686 builds.
+
+Use usize::MAX as the sentinel instead, which preserves placeholder semantics
+and works on both 32-bit and 64-bit targets.
+---
+ icicle-emu/icicle-cpu/src/lifter/mod.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/icicle-emu/icicle-cpu/src/lifter/mod.rs b/icicle-emu/icicle-cpu/src/lifter/mod.rs
+index 5f5948b..de76059 100644
+--- a/icicle-emu/icicle-cpu/src/lifter/mod.rs
++++ b/icicle-emu/icicle-cpu/src/lifter/mod.rs
+@@ -505,7 +505,7 @@ enum BlockResult {
+ pub type BlockId = usize;
+ 
+ /// Constant to use for unknown labels.
+-const UNKNOWN_BLOCK: usize = 0xbadbadbadbad;
++const UNKNOWN_BLOCK: usize = usize::MAX;
+ 
+ /// Constant to use for labels that point to the next address
+ const NEXT_ADDR_LABEL: u16 = u16::MAX;
+-- 
+2.47.0
+
