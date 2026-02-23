@@ -10,4 +10,10 @@ PYTHON_OLEFILE_SITE = https://files.pythonhosted.org/packages/ff/47/a56c2812bc96
 PYTHON_OLEFILE_SETUP_TYPE = setuptools
 PYTHON_OLEFILE_LICENSE = BSD
 
+define PYTHON_OLEFILE_EXTRACT_CMDS
+	$(UNZIP) -d $(@D) $(PYTHON_OLEFILE_DL_DIR)/$(PYTHON_OLEFILE_SOURCE)
+	mv $(@D)/olefile-$(PYTHON_OLEFILE_VERSION)/* $(@D)
+	$(RM) -r $(@D)/olefile-$(PYTHON_OLEFILE_VERSION)
+endef
+
 $(eval $(python-package))
