@@ -1,2 +1,2 @@
-# sha256 from https://pypi.org/project/dictdumper/0.8.4.post6/#files
-sha256  cbcf43183d0f5b4f536aa1ff0695eddb70f01371d83ee8863772f575952da120  dictdumper-0.8.4.post6.tar.gz
+# sha256 observed from Buildroot download of dictdumper-0.8.4.post6.tar.gz
+sha256  7826615acb3db3e9bbd493a950d7a06edc033a091ce9da8b65c69fa940f495b0  dictdumper-0.8.4.post6.tar.gz
