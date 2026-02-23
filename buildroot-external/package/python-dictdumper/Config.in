@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_DICTDUMPER
+	bool "python-dictdumper"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Dumper for Python dictionaries in various output formats.
+
+	  https://pypi.org/project/dictdumper/

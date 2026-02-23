@@ -2,6 +2,7 @@ config BR2_PACKAGE_PYTHON_PY7ZR
 	bool "python-py7zr"
 	depends on BR2_PACKAGE_PYTHON3
 	select BR2_PACKAGE_PYTHON_MULTIVOLUMEFILE
+	select BR2_PACKAGE_PYTHON_PYBCJ
 	help
 	  Pure python 7-zip library
 

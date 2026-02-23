@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_UNTANGLE
+	bool "python-untangle"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Convert XML documents to Python objects.
+
+	  https://pypi.org/project/untangle/

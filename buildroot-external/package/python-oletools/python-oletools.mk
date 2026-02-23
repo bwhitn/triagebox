@@ -17,4 +17,11 @@ define PYTHON_OLETOOLS_EXTRACT_CMDS
 	$(RM) -r $(@D)/oletools-$(PYTHON_OLETOOLS_VERSION)
 endef
 
+# ezhexviewer is GUI-only and requires tkinter/X11, which are intentionally
+# not part of this headless target image.
+define PYTHON_OLETOOLS_REMOVE_GUI_ENTRYPOINT
+	rm -f $(TARGET_DIR)/usr/bin/ezhexviewer
+endef
+PYTHON_OLETOOLS_POST_INSTALL_TARGET_HOOKS += PYTHON_OLETOOLS_REMOVE_GUI_ENTRYPOINT
+
 $(eval $(python-package))

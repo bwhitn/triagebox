@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_PYBCJ
+	bool "python-pybcj"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  BCJ filter encoder/decoder used by py7zr.
+
+	  https://pypi.org/project/pybcj/

@@ -2,6 +2,7 @@ config BR2_PACKAGE_PYTHON_XLMMACRODEOBFUSCATOR
 	bool "python-xlmmacrodeobfuscator"
 	depends on BR2_PACKAGE_PYTHON3
 	select BR2_PACKAGE_PYTHON_LARK
+	select BR2_PACKAGE_PYTHON_UNTANGLE
 	help
 	  XLMMacroDeobfuscator is an XLM Emulation engine written in Python 3, designed to analyze and deobfuscate malicious XLM macros, also known as Excel 4.0 macros, contained in MS Excel files (XLS, XLSM, and XLSB).
 
