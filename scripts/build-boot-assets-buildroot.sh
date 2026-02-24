@@ -572,6 +572,20 @@ else
 fi
 
 echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
+# Clean stale host-side pybind11 artifacts from previous runs. Some packages
+# (notably python-pikepdf) install pybind11 temporarily at build time; leaving
+# it in host site-packages can break unrelated later package builds.
+if [[ -x "${OUT_DIR}/host/bin/python3" ]]; then
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    "${OUT_DIR}/host/bin/python3" -m pip uninstall -y pybind11 >/dev/null 2>&1 || true
+fi
+if [[ -d "${OUT_DIR}/host/lib" ]]; then
+    find "${OUT_DIR}/host/lib" -path '*/site-packages/pybind11' -prune -exec rm -rf {} + || true
+    find "${OUT_DIR}/host/lib" -path '*/site-packages/pybind11-*.dist-info' -prune -exec rm -rf {} + || true
+    find "${OUT_DIR}/host/lib" -path '*/site-packages/include/pybind11' -prune -exec rm -rf {} + || true
+fi
+
 make -C "${BUILDROOT_SRC}" \
     O="${OUT_DIR}" \
     BR2_DL_DIR="${DL_DIR}" \
