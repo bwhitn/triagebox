@@ -69,6 +69,7 @@ make build-disk-resume
 - `BUILDROOT_PRIMARY_SITE` (default `https://sources.buildroot.net`)
 - `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
 - `BUILDROOT_GLOBAL_PATCH_DIR` (default `buildroot/patches`; applies local package patches during Buildroot builds)
+- `INITRD_MODE` (default `minimal`; `minimal` boots rootfs from disk image via tiny initrd, `full` uses Buildroot `rootfs.cpio.gz` as initrd)
 - If `BR2_DOWNLOAD_FORCE_CHECK_HASHES=y` from the base defconfig and the pinned kernel patchlevel is no longer present in Buildroot's `linux.hash`, the build script auto-adjusts to the newest hashed patchlevel in the same major/minor series.
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
@@ -120,6 +121,8 @@ Examples:
 
 ```bash
 BUILDROOT_VERSION=2026.02-rc1 make build-disk
+INITRD_MODE=minimal make build-disk
+INITRD_MODE=full make build-disk
 DISK_MB=512 make build-disk
 AUTO_SHRINK=0 make build-disk
 SHRINK_PAD_MB=1 SHRINK_MIN_MB=0 make build-disk

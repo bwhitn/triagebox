@@ -40,6 +40,7 @@ REFINERY_BUILDROOT_PROVIDED_REPORT="${REFINERY_BUILDROOT_PROVIDED_REPORT:-${ASSE
 REFINERY_MISSING_BUILDROOT_REPORT="${REFINERY_MISSING_BUILDROOT_REPORT:-${ASSETS_DIR}/binary-refinery-missing-buildroot-packages.txt}"
 BUILD_LEGAL_INFO="${BUILD_LEGAL_INFO:-1}"
 LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar.gz}"
+INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
 
 EXTRA_MB="${EXTRA_MB:-32}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
@@ -59,7 +60,7 @@ need_cmd() {
     }
 }
 
-for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed; do
+for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf; do
     need_cmd "$cmd"
 done
 
@@ -77,6 +78,10 @@ if [[ "${REFINERY_REQUIRE_BUILDROOT_TARGET}" != "0" ]] && [[ "${REFINERY_REQUIRE
 fi
 if [[ "${BUILDROOT_RESUME}" != "0" ]] && [[ "${BUILDROOT_RESUME}" != "1" ]]; then
     echo "BUILDROOT_RESUME must be 0 or 1 (got: ${BUILDROOT_RESUME})" >&2
+    exit 1
+fi
+if [[ "${INITRD_MODE}" != "minimal" ]] && [[ "${INITRD_MODE}" != "full" ]]; then
+    echo "INITRD_MODE must be 'minimal' or 'full' (got: ${INITRD_MODE})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -673,18 +678,123 @@ fi
 
 echo "[6/8] Exporting kernel/initrd and creating ext2 root disk"
 cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
-if [[ -f "${ROOTFS_CPIO_GZ}" ]]; then
-    cp "${ROOTFS_CPIO_GZ}" "${INITRD_OUT}"
-elif [[ -f "${ROOTFS_CPIO}" ]]; then
-    gzip -c "${ROOTFS_CPIO}" > "${INITRD_OUT}"
+if [[ "${INITRD_MODE}" == "full" ]]; then
+    if [[ -f "${ROOTFS_CPIO_GZ}" ]]; then
+        cp "${ROOTFS_CPIO_GZ}" "${INITRD_OUT}"
+    elif [[ -f "${ROOTFS_CPIO}" ]]; then
+        gzip -c "${ROOTFS_CPIO}" > "${INITRD_OUT}"
+    else
+        # Fallback: create a minimal empty initramfs.
+        TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/empty-initrd.XXXXXX")"
+        trap 'rm -rf "${TMP_CPIO_DIR}"' EXIT
+        (
+            cd "${TMP_CPIO_DIR}"
+            find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "${INITRD_OUT}"
+        )
+    fi
 else
-    # Fallback: create a minimal empty initramfs.
-    TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/empty-initrd.XXXXXX")"
-    trap 'rm -rf "${TMP_CPIO_DIR}"' EXIT
+    # Keep initrd small and boot rootfs from disk image.
+    TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/minimal-initrd.XXXXXX")"
+    TARGET_ROOT_DIR="${OUT_DIR}/target"
+    INITRD_BUSYBOX="${TARGET_ROOT_DIR}/bin/busybox"
+
+    if [[ ! -x "${INITRD_BUSYBOX}" ]]; then
+        echo "BusyBox not found for initrd bootstrap at ${INITRD_BUSYBOX}" >&2
+        rm -rf "${TMP_CPIO_DIR}"
+        exit 1
+    fi
+
+    mkdir -p "${TMP_CPIO_DIR}/bin" "${TMP_CPIO_DIR}/sbin" \
+        "${TMP_CPIO_DIR}/dev" "${TMP_CPIO_DIR}/proc" "${TMP_CPIO_DIR}/sys" \
+        "${TMP_CPIO_DIR}/run" "${TMP_CPIO_DIR}/newroot"
+    cp -L "${INITRD_BUSYBOX}" "${TMP_CPIO_DIR}/bin/busybox"
+
+    busybox_interp="$(
+        readelf -l "${INITRD_BUSYBOX}" 2>/dev/null \
+            | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' \
+            | head -n1
+    )"
+    if [[ -n "${busybox_interp}" ]] && [[ -f "${TARGET_ROOT_DIR}${busybox_interp}" ]]; then
+        mkdir -p "${TMP_CPIO_DIR}$(dirname "${busybox_interp}")"
+        cp -L "${TARGET_ROOT_DIR}${busybox_interp}" "${TMP_CPIO_DIR}${busybox_interp}"
+    fi
+
+    while IFS= read -r needed_lib; do
+        [[ -n "${needed_lib}" ]] || continue
+        lib_src="$(
+            find "${TARGET_ROOT_DIR}/lib" "${TARGET_ROOT_DIR}/usr/lib" \
+                -maxdepth 4 -name "${needed_lib}" 2>/dev/null | head -n1 || true
+        )"
+        if [[ -z "${lib_src}" ]]; then
+            echo "Warning: initrd missing BusyBox dependency ${needed_lib}" >&2
+            continue
+        fi
+        lib_rel="${lib_src#${TARGET_ROOT_DIR}}"
+        mkdir -p "${TMP_CPIO_DIR}$(dirname "${lib_rel}")"
+        cp -L "${lib_src}" "${TMP_CPIO_DIR}${lib_rel}"
+    done < <(readelf -d "${INITRD_BUSYBOX}" 2>/dev/null | sed -n 's@.*Shared library: \[\(.*\)\]@\1@p')
+
+    cat > "${TMP_CPIO_DIR}/init" <<'EOF'
+#!/bin/busybox sh
+set -eu
+
+export PATH=/bin:/sbin
+
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+mkdir -p /newroot
+
+root_dev=""
+root_fstype=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        root=*) root_dev="${arg#root=}" ;;
+        rootfstype=*) root_fstype="${arg#rootfstype=}" ;;
+    esac
+done
+[ -n "$root_dev" ] || root_dev="/dev/sda"
+
+i=0
+while [ $i -lt 50 ]; do
+    [ -b "$root_dev" ] && break
+    /bin/busybox sleep 0.1
+    i=$((i + 1))
+done
+
+if [ -n "$root_fstype" ]; then
+    /bin/busybox mount -t "$root_fstype" -o rw "$root_dev" /newroot
+else
+    /bin/busybox mount -o rw "$root_dev" /newroot
+fi
+
+mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+/bin/busybox mount --move /dev /newroot/dev
+/bin/busybox mount --move /proc /newroot/proc
+/bin/busybox mount --move /sys /newroot/sys
+/bin/busybox mount --move /run /newroot/run
+
+have_switch_root=0
+for app in $(/bin/busybox --list 2>/dev/null); do
+    if [ "$app" = "switch_root" ]; then
+        have_switch_root=1
+        break
+    fi
+done
+
+if [ "$have_switch_root" -eq 1 ]; then
+    exec /bin/busybox switch_root /newroot /usr/local/sbin/v86-init
+fi
+exec /bin/busybox chroot /newroot /usr/local/sbin/v86-init
+EOF
+    chmod 0755 "${TMP_CPIO_DIR}/init"
+
     (
         cd "${TMP_CPIO_DIR}"
         find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "${INITRD_OUT}"
     )
+    rm -rf "${TMP_CPIO_DIR}"
 fi
 
 rm -rf "${EXPORT_DIR}"
@@ -768,6 +878,7 @@ legal_info_archive_size_mb=${legal_info_archive_size_mb}
 binary_refinery_version=${BINARY_REFINERY_VERSION}
 python_lief_version=${PYTHON_LIEF_VERSION}
 disk_size_mb=${final_disk_mb}
+initrd_mode=${INITRD_MODE}
 kernel=$(basename "${VMLINUX_PATH}")
 rootfs_source=$(basename "${ROOTFS_TAR}")
 META
