@@ -47,14 +47,14 @@ export COLUMNS="$_cols"
 export LINES="$_rows"
 unset _rows _cols
 
-if [ -n "${PS1:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
-    esc="$(printf '\033')"
+if [ -n "${PS1:-}" ]; then
+    # BusyBox ash line editing/completion can render incorrectly when PS1
+    # contains raw ANSI escapes, so keep prompt plain here.
     if [ "$(id -u)" -eq 0 ]; then
-        export PS1="${esc}[1;31m# ${esc}[0m"
+        export PS1="# "
     else
-        export PS1="${esc}[1;32m$ ${esc}[0m"
+        export PS1="$ "
     fi
-    unset esc
 fi
 
 if [ "${TERM:-dumb}" != "dumb" ] && ls --help 2>/dev/null | grep -q -- '--color'; then
