@@ -10,7 +10,7 @@ PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR ?=
 PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH ?= 0
 PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY ?= manylinux_2_28_i686
 PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK ?= manylinux2014_i686
-PYTHON_BINARY_REFINERY_COMMAND_PREFIX ?=
+PYTHON_BINARY_REFINERY_COMMAND_PREFIX ?= ref-
 PYTHON_BINARY_REFINERY_SOURCE = binary_refinery-$(PYTHON_BINARY_REFINERY_VERSION).tar.gz
 PYTHON_BINARY_REFINERY_SITE = https://files.pythonhosted.org/packages/source/b/binary-refinery
 PYTHON_BINARY_REFINERY_LICENSE = MIT
@@ -98,5 +98,28 @@ define PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
 	rm -rf $(@D)/wheelhouse $(@D)/requirements-all.txt
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
+
+define PYTHON_BINARY_REFINERY_RESOLVE_SCRIPT_COLLISIONS
+	if [ -n "$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)" ]; then \
+		bindir="$(TARGET_DIR)/usr/bin"; \
+		prefix="$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)"; \
+		if [ -d "$$bindir" ]; then \
+			for prefixed in "$$bindir"/$$prefix*; do \
+				[ -e "$$prefixed" ] || continue; \
+				name="$${prefixed##*/}"; \
+				base="$${name#$$prefix}"; \
+				[ "$$base" = "$$name" ] && continue; \
+				final_path="$$bindir/$$base"; \
+				if [ -L "$$final_path" ] && [ "$$(readlink "$$final_path")" = "$$name" ]; then \
+					rm -f "$$final_path"; \
+				fi; \
+				if [ ! -e "$$final_path" ]; then \
+					mv "$$prefixed" "$$final_path"; \
+				fi; \
+			done; \
+		fi; \
+	fi
+endef
+PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_RESOLVE_SCRIPT_COLLISIONS
 
 $(eval $(python-package))
