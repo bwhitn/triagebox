@@ -40,7 +40,6 @@ orjson
 Pygments
 pyppmd
 py7zr
-backports.lzma
 msoffcrypto-tool
 access-parser
 cryptography
