@@ -305,7 +305,7 @@ cat >> "${OUT_DIR}/.config" <<EOF
 BR2_ROOTFS_OVERLAY="${OVERLAY_DIR}"
 BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="${BUSYBOX_NO_DHCP_FRAGMENT}"
 BR2_TARGET_ROOTFS_TAR=y
-BR2_TARGET_ROOTFS_CPIO=y
+# BR2_TARGET_ROOTFS_CPIO is not set
 # BR2_TARGET_ROOTFS_EXT2 is not set
 # BR2_PACKAGE_IFUPDOWN_SCRIPTS is not set
 BR2_x86_pentium_m=y
@@ -630,8 +630,6 @@ fi
 
 VMLINUX_PATH="${OUT_DIR}/images/bzImage"
 ROOTFS_TAR="${OUT_DIR}/images/rootfs.tar"
-ROOTFS_CPIO_GZ="${OUT_DIR}/images/rootfs.cpio.gz"
-ROOTFS_CPIO="${OUT_DIR}/images/rootfs.cpio"
 
 if [[ ! -f "${VMLINUX_PATH}" ]]; then
     echo "Buildroot kernel image not found at ${VMLINUX_PATH}" >&2
@@ -644,19 +642,14 @@ fi
 
 echo "[6/8] Exporting kernel/initrd and creating ext2 root disk"
 cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
-if [[ -f "${ROOTFS_CPIO_GZ}" ]]; then
-    cp "${ROOTFS_CPIO_GZ}" "${INITRD_OUT}"
-elif [[ -f "${ROOTFS_CPIO}" ]]; then
-    gzip -c "${ROOTFS_CPIO}" > "${INITRD_OUT}"
-else
-    # Fallback: create a minimal empty initramfs.
-    TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/empty-initrd.XXXXXX")"
-    trap 'rm -rf "${TMP_CPIO_DIR}"' EXIT
-    (
-        cd "${TMP_CPIO_DIR}"
-        find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "${INITRD_OUT}"
-    )
-fi
+
+# Keep initrd minimal: real userspace lives on the ext2 disk image.
+TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/minimal-initrd.XXXXXX")"
+(
+    cd "${TMP_CPIO_DIR}"
+    find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "${INITRD_OUT}"
+)
+rm -rf "${TMP_CPIO_DIR}"
 
 rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}"
