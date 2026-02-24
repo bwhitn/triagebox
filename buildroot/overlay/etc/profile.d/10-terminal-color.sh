@@ -1,5 +1,17 @@
 #!/bin/sh
 
+run_stty() {
+    if command -v stty >/dev/null 2>&1; then
+        stty "$@"
+        return
+    fi
+    if /bin/busybox --list 2>/dev/null | grep -qx "stty"; then
+        /bin/busybox stty "$@"
+        return
+    fi
+    return 127
+}
+
 case "${TERM:-}" in
     ""|linux|vt100|vt220)
         export TERM=xterm
@@ -7,8 +19,8 @@ case "${TERM:-}" in
 esac
 
 # Some tools crash when terminal width/height resolve to zero.
-if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
-    set -- $(stty size 2>/dev/null || echo "0 0")
+if [ -t 0 ]; then
+    set -- $(run_stty size 2>/dev/null || echo "0 0")
     _rows="$1"
     _cols="$2"
 else
@@ -27,8 +39,8 @@ case "${_rows:-}" in
         ;;
 esac
 
-if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
-    stty rows "$_rows" cols "$_cols" 2>/dev/null || true
+if [ -t 0 ]; then
+    run_stty rows "$_rows" cols "$_cols" 2>/dev/null || true
 fi
 
 export COLUMNS="$_cols"

@@ -24,9 +24,19 @@ esac
 : "${LINES:=40}"
 export COLUMNS LINES
 
-if command -v stty >/dev/null 2>&1; then
-    stty sane rows "$LINES" cols "$COLUMNS" 2>/dev/null || true
-fi
+run_stty() {
+    if command -v stty >/dev/null 2>&1; then
+        stty "$@"
+        return
+    fi
+    if /bin/busybox --list 2>/dev/null | grep -qx "stty"; then
+        /bin/busybox stty "$@"
+        return
+    fi
+    return 127
+}
+
+run_stty sane rows "$LINES" cols "$COLUMNS" 2>/dev/null || true
 
 echo ""
 echo "Buildroot Linux running on v86"
@@ -58,7 +68,9 @@ launch_shell() {
         # Fallback path when cttyhack is unavailable:
         # open ttyS0 as a session leader so it becomes controlling TTY.
         run_setsid /bin/sh -c '
-            stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 || true
+            /bin/busybox stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
+                || stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
+                || true
             exec /bin/sh -l < /dev/ttyS0 > /dev/ttyS0 2>&1
         '
         return
