@@ -17,7 +17,7 @@ PYTHON_BINARY_REFINERY_LICENSE = MIT
 PYTHON_BINARY_REFINERY_LICENSE_FILES = LICENSE.md
 PYTHON_BINARY_REFINERY_SETUP_TYPE = setuptools
 PYTHON_BINARY_REFINERY_DEPENDENCIES = host-python-pip host-python-installer host-python-toml
-PYTHON_BINARY_REFINERY_ENV = REFINERY_PREFIX=$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)
+PYTHON_BINARY_REFINERY_ENV = REFINERY_PREFIX=
 
 PYTHON_BINARY_REFINERY_PYTAG = cp$(subst .,,$(PYTHON3_VERSION_MAJOR))
 PYTHON_BINARY_REFINERY_REQUIREMENTS_FILE = \
@@ -43,6 +43,28 @@ define PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
 		> $(@D)/pyproject.toml
 endef
 PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
+
+define PYTHON_BINARY_REFINERY_PREPARE_SCRIPT_STAGING
+	rm -rf $(@D)/.scripts
+	mkdir -p $(@D)/.scripts
+endef
+PYTHON_BINARY_REFINERY_PRE_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PREPARE_SCRIPT_STAGING
+
+define PYTHON_BINARY_REFINERY_INSTALL_TARGET_CMDS
+	(cd $(@D)/; \
+		$(PKG_PYTHON_SETUPTOOLS_ENV) \
+		$(PYTHON_BINARY_REFINERY_ENV) \
+		$(HOST_DIR)/bin/python3 \
+		$(TOPDIR)/support/scripts/pyinstaller.py \
+		dist/* \
+		--interpreter=/usr/bin/python \
+		--script-kind=posix \
+		--purelib=$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages \
+		--headers=$(TARGET_DIR)/usr/include/python$(PYTHON3_VERSION_MAJOR) \
+		--scripts=$(@D)/.scripts \
+		--data=$(TARGET_DIR) \
+		$(PYTHON_BINARY_REFINERY_INSTALL_TARGET_OPTS))
+endef
 
 define PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
 	rm -rf $(@D)/wheelhouse
@@ -99,27 +121,39 @@ define PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_INSTALL_ALL_DEPS
 
-define PYTHON_BINARY_REFINERY_RESOLVE_SCRIPT_COLLISIONS
-	if [ -n "$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)" ]; then \
-		bindir="$(TARGET_DIR)/usr/bin"; \
-		prefix="$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)"; \
-		if [ -d "$$bindir" ]; then \
-			for prefixed in "$$bindir"/$$prefix*; do \
-				[ -e "$$prefixed" ] || continue; \
-				name="$${prefixed##*/}"; \
-				base="$${name#$$prefix}"; \
-				[ "$$base" = "$$name" ] && continue; \
-				final_path="$$bindir/$$base"; \
-				if [ -L "$$final_path" ] && [ "$$(readlink "$$final_path")" = "$$name" ]; then \
-					rm -f "$$final_path"; \
+define PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
+	tmpdir="$(@D)/.scripts"; \
+	bindir="$(TARGET_DIR)/usr/bin"; \
+	prefix="$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)"; \
+	if [ -d "$$tmpdir" ]; then \
+		mkdir -p "$$bindir"; \
+		for src in "$$tmpdir"/*; do \
+			[ -f "$$src" ] || continue; \
+			name="$${src##*/}"; \
+			dst="$$bindir/$$name"; \
+			if [ -e "$$dst" ]; then \
+				if grep -qi 'refinery' "$$dst" 2>/dev/null; then \
+					rm -f "$$dst"; \
+				elif [ -n "$$prefix" ]; then \
+					case "$$name" in \
+						$$prefix*) dst="$$bindir/$$name" ;; \
+						*) dst="$$bindir/$$prefix$$name" ;; \
+					esac; \
+					if [ -e "$$dst" ] && grep -qi 'refinery' "$$dst" 2>/dev/null; then \
+						rm -f "$$dst"; \
+					fi; \
 				fi; \
-				if [ ! -e "$$final_path" ]; then \
-					mv "$$prefixed" "$$final_path"; \
-				fi; \
-			done; \
-		fi; \
+			fi; \
+			if [ -e "$$dst" ]; then \
+				rm -f "$$src"; \
+				continue; \
+			fi; \
+			mv "$$src" "$$dst"; \
+			chmod 0755 "$$dst"; \
+		done; \
+		rmdir "$$tmpdir" 2>/dev/null || true; \
 	fi
 endef
-PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_RESOLVE_SCRIPT_COLLISIONS
+PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 
 $(eval $(python-package))
