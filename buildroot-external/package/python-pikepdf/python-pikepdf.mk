@@ -23,7 +23,7 @@ define PYTHON_PIKEPDF_INSTALL_PYBIND11
 	mkdir -p $(@D)/.pybind11-wheelhouse
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \
-	python3 -m pip download --only-binary=:all: --dest $(@D)/.pybind11-wheelhouse \
+	$(HOST_DIR)/bin/python3 -m pip download --only-binary=:all: --dest $(@D)/.pybind11-wheelhouse \
 		pybind11==$(PYTHON_PIKEPDF_PYBIND11_VERSION)
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \

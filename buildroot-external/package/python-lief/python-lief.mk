@@ -29,7 +29,7 @@ define PYTHON_LIEF_INSTALL_BUILD_REQUIREMENTS
 	mkdir -p $(@D)/.lief-wheelhouse
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \
-	python3 -m pip download --only-binary=:all: --dest $(@D)/.lief-wheelhouse \
+	$(HOST_DIR)/bin/python3 -m pip download --only-binary=:all: --dest $(@D)/.lief-wheelhouse \
 		-r $(@D)/api/python/build-requirements.txt
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \

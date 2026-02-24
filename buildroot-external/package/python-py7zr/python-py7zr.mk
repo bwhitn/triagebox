@@ -37,7 +37,7 @@ define PYTHON_PY7ZR_INSTALL_BUILD_BACKEND_DEPS
 	mkdir -p $(@D)/.py7zr-wheelhouse
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \
-	python3 -m pip download --only-binary=:all: --dest $(@D)/.py7zr-wheelhouse \
+	$(HOST_DIR)/bin/python3 -m pip download --only-binary=:all: --dest $(@D)/.py7zr-wheelhouse \
 		"setuptools>=80" "setuptools_scm[toml]>=9.2.0"
 	PIP_DISABLE_PIP_VERSION_CHECK=1 \
 	PIP_NO_CACHE_DIR=1 \
