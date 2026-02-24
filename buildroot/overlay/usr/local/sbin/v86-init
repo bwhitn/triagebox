@@ -26,18 +26,30 @@ echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."
 echo ""
 
 launch_shell() {
+    run_setsid() {
+        if command -v setsid >/dev/null 2>&1; then
+            setsid "$@"
+            return
+        fi
+        if /bin/busybox --list 2>/dev/null | grep -qx "setsid"; then
+            /bin/busybox setsid "$@"
+            return
+        fi
+        "$@"
+    }
+
     if command -v cttyhack >/dev/null 2>&1; then
-        setsid cttyhack /bin/sh -l
+        run_setsid cttyhack /bin/sh -l
         return
     fi
     if /bin/busybox --list 2>/dev/null | grep -qx "cttyhack"; then
-        setsid /bin/busybox cttyhack /bin/sh -l
+        run_setsid /bin/busybox cttyhack /bin/sh -l
         return
     fi
     if [ -c /dev/ttyS0 ]; then
         # Fallback path when cttyhack is unavailable:
         # open ttyS0 as a session leader so it becomes controlling TTY.
-        setsid /bin/sh -c '
+        run_setsid /bin/sh -c '
             stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 || true
             exec /bin/sh -l < /dev/ttyS0 > /dev/ttyS0 2>&1
         '
