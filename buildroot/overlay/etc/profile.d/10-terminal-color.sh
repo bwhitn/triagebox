@@ -6,6 +6,18 @@ case "${TERM:-}" in
         ;;
 esac
 
+# Some tools crash when terminal width/height resolve to zero.
+case "${COLUMNS:-}" in
+    ""|*[!0-9]*|0)
+        export COLUMNS=120
+        ;;
+esac
+case "${LINES:-}" in
+    ""|*[!0-9]*|0)
+        export LINES=40
+        ;;
+esac
+
 if [ -n "${PS1:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
     esc="$(printf '\033')"
     if [ "$(id -u)" -eq 0 ]; then

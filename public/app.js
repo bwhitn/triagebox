@@ -10,7 +10,21 @@
     }
     return null;
   })();
+  const xtermFitAddonCtor = (() => {
+    if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
+      return window.FitAddon.FitAddon;
+    }
+    if (window.XtermAddonFit && typeof window.XtermAddonFit.FitAddon === "function") {
+      return window.XtermAddonFit.FitAddon;
+    }
+    if (typeof window.FitAddon === "function") {
+      return window.FitAddon;
+    }
+    return null;
+  })();
   const vgaEnabled = config.enableVga === true || (config.enableVga !== false && !serialEnabled);
+  const mouseEnabled = config.enableMouse === true;
+  const cdromEnabled = config.enableCdrom === true;
 
   const statusEl = document.getElementById("status");
   const ipsEl = document.getElementById("ips");
@@ -41,6 +55,7 @@
   let serialResizeObserver = null;
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
+  let serialFitAddon = null;
   let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
@@ -315,6 +330,12 @@
     }
 
     const term = emulator.serial_adapter.term;
+    if (serialFitAddon && typeof serialFitAddon.fit === "function") {
+      serialFitAddon.fit();
+      return;
+    }
+
+    // Fallback path when xterm-addon-fit is unavailable.
     const dims = term?._core?._renderService?.dimensions?.css;
     const cellWidth = dims?.cell?.width || 0;
     const cellHeight = dims?.cell?.height || 0;
@@ -433,7 +454,8 @@
     const rootFsType = typeof config.rootFsType === "string" && config.rootFsType.trim().length > 0
       ? config.rootFsType.trim()
       : "ext4";
-    const defaultCmdlineBase = `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init ip=off net.ifnames=0`;
+    const cdromBlacklist = cdromEnabled ? "" : " modprobe.blacklist=sr_mod,cdrom";
+    const defaultCmdlineBase = `root=LABEL=rootfs rootfstype=${rootFsType} rw rootwait init=/usr/local/sbin/v86-init ip=off net.ifnames=0${cdromBlacklist}`;
     const defaultCmdlineNoSerial = `${defaultCmdlineBase} console=tty0`;
     const defaultCmdlineSerial = vgaEnabled
       ? `${defaultCmdlineBase} console=ttyS0 console=tty0`
@@ -458,7 +480,8 @@
       cmdline,
       net_device: { type: netDeviceType },
       disable_keyboard: !vgaEnabled,
-      disable_mouse: !vgaEnabled,
+      disable_mouse: !mouseEnabled,
+      disable_cdrom: !cdromEnabled,
       disable_speaker: true,
       boot_order: 0x132,
       autostart: false
@@ -504,6 +527,16 @@
       setupSerialResizeHandling();
       if (serialEnabled && serialUseXterm) {
         const term = emulator?.serial_adapter?.term;
+        if (!serialFitAddon && xtermFitAddonCtor && term && typeof term.loadAddon === "function") {
+          try {
+            serialFitAddon = new xtermFitAddonCtor();
+            term.loadAddon(serialFitAddon);
+          } catch (err) {
+            serialFitAddon = null;
+            console.warn("failed to load xterm fit addon", err);
+          }
+        }
+        scheduleSerialFit();
         if (term && typeof term.attachCustomKeyEventHandler === "function") {
           term.attachCustomKeyEventHandler((event) => {
             if (event.type !== "keydown") {

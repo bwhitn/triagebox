@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_INFLATE64
+	bool "python-inflate64"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  DEFLATE64 implementation used by py7zr.
+
+	  https://pypi.org/project/inflate64/

@@ -10,6 +10,10 @@ window.V86_VM_CONFIG = {
   enableSerial: true,
   // Keep VM serial-only by default (no VGA/video device).
   enableVga: false,
+  // Keep mouse disabled by default.
+  enableMouse: false,
+  // Keep CD-ROM disabled by default.
+  enableCdrom: false,
   // Keep loopback-only networking by default (no emulated ethernet controller).
   enableEthernet: false,
   // Optional: explicit net device type, e.g. "ne2k" or "none" (default).
@@ -19,5 +23,5 @@ window.V86_VM_CONFIG = {
   // Optional VGA knobs when enableVga=true.
   // vgaMemoryMb: 8,
   // vgaBios: "assets/v86/vgabios.bin",
-  asyncDisk: false
+  asyncDisk: true
 };
