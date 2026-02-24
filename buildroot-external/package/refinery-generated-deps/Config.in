@@ -1,4 +1,5 @@
 source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-access-parser/Config.in"
+source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-backports-lzma/Config.in"
 source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-capstone/Config.in"
 source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-compressed-rtf/Config.in"
 source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-decompyle3/Config.in"

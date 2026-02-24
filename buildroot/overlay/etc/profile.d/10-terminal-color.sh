@@ -7,16 +7,33 @@ case "${TERM:-}" in
 esac
 
 # Some tools crash when terminal width/height resolve to zero.
-case "${COLUMNS:-}" in
+if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
+    set -- $(stty size 2>/dev/null || echo "0 0")
+    _rows="$1"
+    _cols="$2"
+else
+    _rows="${LINES:-0}"
+    _cols="${COLUMNS:-0}"
+fi
+
+case "${_cols:-}" in
     ""|*[!0-9]*|0)
-        export COLUMNS=120
+        _cols=120
         ;;
 esac
-case "${LINES:-}" in
+case "${_rows:-}" in
     ""|*[!0-9]*|0)
-        export LINES=40
+        _rows=40
         ;;
 esac
+
+if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
+    stty rows "$_rows" cols "$_cols" 2>/dev/null || true
+fi
+
+export COLUMNS="$_cols"
+export LINES="$_rows"
+unset _rows _cols
 
 if [ -n "${PS1:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
     esc="$(printf '\033')"

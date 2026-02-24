@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_BACKPORTS_LZMA
+	bool "python-backports-lzma"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Backport of Python 3.3's lzma module.
+
+	  https://pypi.org/project/backports.lzma/
