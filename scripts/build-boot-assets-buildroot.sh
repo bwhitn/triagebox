@@ -740,15 +740,15 @@ set -eu
 
 export PATH=/bin:/sbin
 
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sysfs /sys 2>/dev/null || true
-mount -t tmpfs tmpfs /run 2>/dev/null || true
-mkdir -p /newroot
+/bin/busybox mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+/bin/busybox mount -t proc proc /proc 2>/dev/null || true
+/bin/busybox mount -t sysfs sysfs /sys 2>/dev/null || true
+/bin/busybox mount -t tmpfs tmpfs /run 2>/dev/null || true
+/bin/busybox mkdir -p /newroot
 
 root_dev=""
 root_fstype=""
-for arg in $(cat /proc/cmdline); do
+for arg in $(/bin/busybox cat /proc/cmdline); do
     case "$arg" in
         root=*) root_dev="${arg#root=}" ;;
         rootfstype=*) root_fstype="${arg#rootfstype=}" ;;
@@ -769,7 +769,7 @@ else
     /bin/busybox mount -o rw "$root_dev" /newroot
 fi
 
-mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+/bin/busybox mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
 /bin/busybox mount --move /dev /newroot/dev
 /bin/busybox mount --move /proc /newroot/proc
 /bin/busybox mount --move /sys /newroot/sys
