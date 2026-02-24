@@ -383,7 +383,7 @@ def update_generated_menu(generated_packages: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--buildroot-version", default="2025.11.1")
+    parser.add_argument("--buildroot-version", default="2026.02-rc1")
     parser.add_argument("--lief-version", default="0.17.3")
     args = parser.parse_args()
 

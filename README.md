@@ -61,7 +61,7 @@ make build-disk-resume
 
 ## Build knobs
 
-- `BUILDROOT_VERSION` (default `2025.11.1`)
+- `BUILDROOT_VERSION` (default `2026.02-rc1`)
 - `BUILDROOT_ARCHIVE_URL` (default points to buildroot.org tarball for that version)
 - `BUILDROOT_DEFCONFIG` (default `qemu_x86_defconfig`)
 - `BUILDROOT_RESUME` (default `0`; set `1` to reuse existing Buildroot output dir and continue failed builds)
@@ -119,7 +119,7 @@ Binary-refinery note:
 Examples:
 
 ```bash
-BUILDROOT_VERSION=2025.11.1 make build-disk
+BUILDROOT_VERSION=2026.02-rc1 make build-disk
 DISK_MB=512 make build-disk
 AUTO_SHRINK=0 make build-disk
 SHRINK_PAD_MB=1 SHRINK_MIN_MB=0 make build-disk
