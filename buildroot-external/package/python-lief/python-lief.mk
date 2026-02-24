@@ -24,6 +24,14 @@ define PYTHON_LIEF_FIX_PYCONFIG_HEADER
 endef
 PYTHON_LIEF_PRE_BUILD_HOOKS += PYTHON_LIEF_FIX_PYCONFIG_HEADER
 
+define PYTHON_LIEF_ADJUST_BUILD_REQUIREMENTS
+	if [ -f $(@D)/api/python/build-requirements.txt ]; then \
+		$(SED) -i -e 's/^pydantic==2\.11\.3$$/pydantic>=2.11.3,<3/' \
+			$(@D)/api/python/build-requirements.txt; \
+	fi
+endef
+PYTHON_LIEF_PRE_BUILD_HOOKS += PYTHON_LIEF_ADJUST_BUILD_REQUIREMENTS
+
 define PYTHON_LIEF_INSTALL_BUILD_REQUIREMENTS
 	rm -rf $(@D)/.lief-wheelhouse
 	mkdir -p $(@D)/.lief-wheelhouse
