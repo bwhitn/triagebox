@@ -108,6 +108,33 @@ if [[ ! -d "${BUILDROOT_SRC}" ]]; then
     tar -xf "${BUILDROOT_ARCHIVE}" -C "${SRC_PARENT}"
 fi
 
+# Buildroot 2026.02-rc1 python-pybind installs only Python files in host
+# site-packages, but pybind11 v3 expects headers at ../include/pybind11
+# relative to the module. Patch the Buildroot recipe in-place so host pybind11
+# imports work for packages such as python-pillow.
+if [[ -f "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk" ]] && \
+    ! grep -q '^PYTHON_PYBIND_HOST_INCLUDE_PATH' "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk"; then
+    echo "Applying local Buildroot fix: python-pybind host include layout"
+    pybind_mk_tmp="$(mktemp "${WORK_DIR}/python-pybind.mk.XXXXXX")"
+    awk '
+        {
+            print
+            if ($0 == "PYTHON_PYBIND_INSTALL_PATH = $(HOST_DIR)/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/pybind11") {
+                print "PYTHON_PYBIND_HOST_INCLUDE_PATH = $(HOST_DIR)/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/include"
+            }
+            if ($0 == "\tmkdir -p $(PYTHON_PYBIND_INSTALL_PATH)") {
+                print "\tmkdir -p $(PYTHON_PYBIND_HOST_INCLUDE_PATH)"
+            }
+            if ($0 == "\tcp -dpf $(@D)/pybind11/*.py $(PYTHON_PYBIND_INSTALL_PATH)") {
+                print "\trm -rf $(PYTHON_PYBIND_HOST_INCLUDE_PATH)/pybind11"
+                print "\tcp -dprf $(@D)/include/pybind11 $(PYTHON_PYBIND_HOST_INCLUDE_PATH)/"
+            }
+        }
+    ' "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk" > "${pybind_mk_tmp}"
+    cp "${pybind_mk_tmp}" "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk"
+    rm -f "${pybind_mk_tmp}"
+fi
+
 refinery_requirements_source="${BR2_EXTERNAL_DIR}/package/python-binary-refinery/requirements-all.txt"
 refinery_pip_requirements="${WORK_DIR}/refinery-pip-requirements.txt"
 refinery_buildroot_requirements="${WORK_DIR}/refinery-buildroot-provided.txt"
@@ -572,20 +599,6 @@ else
 fi
 
 echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
-# Clean stale host-side pybind11 artifacts from previous runs. Some packages
-# (notably python-pikepdf) install pybind11 temporarily at build time; leaving
-# it in host site-packages can break unrelated later package builds.
-if [[ -x "${OUT_DIR}/host/bin/python3" ]]; then
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
-    "${OUT_DIR}/host/bin/python3" -m pip uninstall -y pybind11 >/dev/null 2>&1 || true
-fi
-if [[ -d "${OUT_DIR}/host/lib" ]]; then
-    find "${OUT_DIR}/host/lib" -path '*/site-packages/pybind11' -prune -exec rm -rf {} + || true
-    find "${OUT_DIR}/host/lib" -path '*/site-packages/pybind11-*.dist-info' -prune -exec rm -rf {} + || true
-    find "${OUT_DIR}/host/lib" -path '*/site-packages/include/pybind11' -prune -exec rm -rf {} + || true
-fi
-
 make -C "${BUILDROOT_SRC}" \
     O="${OUT_DIR}" \
     BR2_DL_DIR="${DL_DIR}" \

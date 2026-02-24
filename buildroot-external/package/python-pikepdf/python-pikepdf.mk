@@ -33,14 +33,4 @@ define PYTHON_PIKEPDF_INSTALL_PYBIND11
 endef
 PYTHON_PIKEPDF_PRE_BUILD_HOOKS += PYTHON_PIKEPDF_INSTALL_PYBIND11
 
-define PYTHON_PIKEPDF_REMOVE_PYBIND11
-	PIP_DISABLE_PIP_VERSION_CHECK=1 \
-	PIP_NO_CACHE_DIR=1 \
-	$(HOST_DIR)/bin/python3 -m pip uninstall -y pybind11 >/dev/null 2>&1 || true
-	find $(HOST_DIR)/lib -path '*/site-packages/pybind11' -prune -exec rm -rf {} + || true
-	find $(HOST_DIR)/lib -path '*/site-packages/pybind11-*.dist-info' -prune -exec rm -rf {} + || true
-	find $(HOST_DIR)/lib -path '*/site-packages/include/pybind11' -prune -exec rm -rf {} + || true
-endef
-PYTHON_PIKEPDF_POST_INSTALL_TARGET_HOOKS += PYTHON_PIKEPDF_REMOVE_PYBIND11
-
 $(eval $(python-package))
