@@ -20,6 +20,14 @@ case "${TERM:-}" in
         ;;
 esac
 
+: "${COLUMNS:=120}"
+: "${LINES:=40}"
+export COLUMNS LINES
+
+if command -v stty >/dev/null 2>&1; then
+    stty sane rows "$LINES" cols "$COLUMNS" 2>/dev/null || true
+fi
+
 echo ""
 echo "Buildroot Linux running on v86"
 echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."

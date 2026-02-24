@@ -2,3 +2,8 @@
 # CONFIG_UDHCPC is not set
 # CONFIG_UDHCPC6 is not set
 # CONFIG_UDHCPD is not set
+
+# Ensure serial login shell setup has required tty/session helpers.
+CONFIG_CTTYHACK=y
+CONFIG_SETSID=y
+CONFIG_STTY=y
