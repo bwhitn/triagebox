@@ -33,10 +33,14 @@ endef
 PYTHON_PY7ZR_POST_PATCH_HOOKS += PYTHON_PY7ZR_RELAX_BUILD_BACKEND_REQS
 
 define PYTHON_PY7ZR_FORCE_STDLIB_LZMA
-	if [ -f $(@D)/py7zr/compressor.py ]; then \
-		$(SED) 's|from backports import lzma|import lzma|g' $(@D)/py7zr/compressor.py; \
-		$(SED) 's|import backports\\.lzma as lzma|import lzma|g' $(@D)/py7zr/compressor.py; \
-	fi
+	set -e; \
+	for compressor_py in $$(find $(@D) -type f -path '*/py7zr/compressor.py'); do \
+		$(SED) 's|from backports import lzma as lzma|import lzma|g' "$$compressor_py"; \
+		$(SED) 's|from backports import lzma|import lzma|g' "$$compressor_py"; \
+		$(SED) 's|import backports\\.lzma as lzma|import lzma|g' "$$compressor_py"; \
+		$(SED) 's|from backports\\.lzma import |from lzma import |g' "$$compressor_py"; \
+		$(SED) 's|backports\\.lzma|lzma|g' "$$compressor_py"; \
+	done
 endef
 PYTHON_PY7ZR_POST_PATCH_HOOKS += PYTHON_PY7ZR_FORCE_STDLIB_LZMA
 

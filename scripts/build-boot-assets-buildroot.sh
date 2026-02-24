@@ -59,7 +59,7 @@ need_cmd() {
     }
 }
 
-for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr; do
+for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr readelf sed; do
     need_cmd "$cmd"
 done
 
@@ -644,8 +644,107 @@ fi
 echo "[6/8] Exporting kernel/initrd and creating ext2 root disk"
 cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
 
-# Keep initrd minimal: real userspace lives on the ext2 disk image.
+# Keep initrd small, but include an early /init that mounts the ext2 disk and
+# switch_root's into the real rootfs. This preserves normal userspace behavior
+# without embedding the full target filesystem into initrd.
 TMP_CPIO_DIR="$(mktemp -d "${WORK_DIR}/minimal-initrd.XXXXXX")"
+TARGET_ROOT_DIR="${OUT_DIR}/target"
+INITRD_BUSYBOX="${TARGET_ROOT_DIR}/bin/busybox"
+
+if [[ ! -x "${INITRD_BUSYBOX}" ]]; then
+    echo "BusyBox not found for initrd bootstrap at ${INITRD_BUSYBOX}" >&2
+    rm -rf "${TMP_CPIO_DIR}"
+    exit 1
+fi
+
+mkdir -p "${TMP_CPIO_DIR}/bin" "${TMP_CPIO_DIR}/sbin" \
+    "${TMP_CPIO_DIR}/dev" "${TMP_CPIO_DIR}/proc" "${TMP_CPIO_DIR}/sys" \
+    "${TMP_CPIO_DIR}/run" "${TMP_CPIO_DIR}/newroot"
+cp -L "${INITRD_BUSYBOX}" "${TMP_CPIO_DIR}/bin/busybox"
+
+# Copy BusyBox loader and shared libs into initrd when BusyBox is dynamically linked.
+busybox_interp="$(
+    readelf -l "${INITRD_BUSYBOX}" 2>/dev/null \
+        | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' \
+        | head -n1
+)"
+if [[ -n "${busybox_interp}" ]] && [[ -f "${TARGET_ROOT_DIR}${busybox_interp}" ]]; then
+    mkdir -p "${TMP_CPIO_DIR}$(dirname "${busybox_interp}")"
+    cp -L "${TARGET_ROOT_DIR}${busybox_interp}" "${TMP_CPIO_DIR}${busybox_interp}"
+fi
+
+while IFS= read -r needed_lib; do
+    [[ -n "${needed_lib}" ]] || continue
+    lib_src="$(
+        find "${TARGET_ROOT_DIR}/lib" "${TARGET_ROOT_DIR}/usr/lib" \
+            -maxdepth 4 -name "${needed_lib}" 2>/dev/null | head -n1 || true
+    )"
+    if [[ -z "${lib_src}" ]]; then
+        echo "Warning: initrd missing BusyBox dependency ${needed_lib}" >&2
+        continue
+    fi
+    lib_rel="${lib_src#${TARGET_ROOT_DIR}}"
+    mkdir -p "${TMP_CPIO_DIR}$(dirname "${lib_rel}")"
+    cp -L "${lib_src}" "${TMP_CPIO_DIR}${lib_rel}"
+done < <(readelf -d "${INITRD_BUSYBOX}" 2>/dev/null | sed -n 's@.*Shared library: \[\(.*\)\]@\1@p')
+
+cat > "${TMP_CPIO_DIR}/init" <<'EOF'
+#!/bin/busybox sh
+set -eu
+
+export PATH=/bin:/sbin
+
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+mkdir -p /newroot
+
+root_dev=""
+root_fstype=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        root=*) root_dev="${arg#root=}" ;;
+        rootfstype=*) root_fstype="${arg#rootfstype=}" ;;
+    esac
+done
+[ -n "$root_dev" ] || root_dev="/dev/sda"
+
+# Wait briefly for block device enumeration in emulated environments.
+i=0
+while [ $i -lt 50 ]; do
+    [ -b "$root_dev" ] && break
+    /bin/busybox sleep 0.1
+    i=$((i + 1))
+done
+
+if [ -n "$root_fstype" ]; then
+    /bin/busybox mount -t "$root_fstype" -o rw "$root_dev" /newroot
+else
+    /bin/busybox mount -o rw "$root_dev" /newroot
+fi
+
+mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+/bin/busybox mount --move /dev /newroot/dev
+/bin/busybox mount --move /proc /newroot/proc
+/bin/busybox mount --move /sys /newroot/sys
+/bin/busybox mount --move /run /newroot/run
+
+have_switch_root=0
+for app in $(/bin/busybox --list 2>/dev/null); do
+    if [ "$app" = "switch_root" ]; then
+        have_switch_root=1
+        break
+    fi
+done
+
+if [ "$have_switch_root" -eq 1 ]; then
+    exec /bin/busybox switch_root /newroot /usr/local/sbin/v86-init
+fi
+exec /bin/busybox chroot /newroot /usr/local/sbin/v86-init
+EOF
+chmod 0755 "${TMP_CPIO_DIR}/init"
+
 (
     cd "${TMP_CPIO_DIR}"
     find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "${INITRD_OUT}"
