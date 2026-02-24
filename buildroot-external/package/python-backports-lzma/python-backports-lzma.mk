@@ -9,5 +9,6 @@ PYTHON_BACKPORTS_LZMA_SOURCE = backports.lzma-$(PYTHON_BACKPORTS_LZMA_VERSION).t
 PYTHON_BACKPORTS_LZMA_SITE = https://files.pythonhosted.org/packages/source/b/backports.lzma
 PYTHON_BACKPORTS_LZMA_SETUP_TYPE = setuptools
 PYTHON_BACKPORTS_LZMA_LICENSE = Python-2.0
+PYTHON_BACKPORTS_LZMA_DEPENDENCIES = xz
 
 $(eval $(python-package))
