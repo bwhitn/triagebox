@@ -54,9 +54,22 @@ set_term_dimensions
 
 mount_extra_disk() {
     mountpoint="/root"
-    for dev in /dev/sdb /dev/vdb /dev/hdb; do
+    # Secondary disk attach can race with early userspace; retry briefly.
+    attempts=30
+    while [ "$attempts" -gt 0 ]; do
+        for dev in /dev/sdb1 /dev/sdb /dev/vdb1 /dev/vdb /dev/hdb1 /dev/hdb; do
+            [ -b "$dev" ] || continue
+            if mount -t auto "$dev" "$mountpoint" 2>/dev/null; then
+                echo "Mounted extra disk ${dev} on ${mountpoint}"
+                return 0
+            fi
+        done
+        attempts=$((attempts - 1))
+        sleep 0.2
+    done
+    for dev in /dev/sdb1 /dev/sdb /dev/vdb1 /dev/vdb /dev/hdb1 /dev/hdb; do
         [ -b "$dev" ] || continue
-        if mount -t auto "$dev" "$mountpoint" 2>/dev/null; then
+        if mount -t auto "$dev" "$mountpoint"; then
             echo "Mounted extra disk ${dev} on ${mountpoint}"
             return 0
         fi
