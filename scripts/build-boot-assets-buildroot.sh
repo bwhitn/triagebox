@@ -788,19 +788,13 @@ if [ "$have_switch_root" -eq 1 ]; then
     if [ -x /newroot/sbin/init ]; then
         exec /bin/busybox switch_root /newroot /sbin/init
     fi
-    if [ -x /newroot/usr/local/sbin/v86-init ]; then
-        exec /bin/busybox switch_root /newroot /usr/local/sbin/v86-init
-    fi
-    echo "No init binary found in /newroot" >&2
+    echo "No /sbin/init found in /newroot" >&2
     exec /bin/busybox sh
 fi
 if [ -x /newroot/sbin/init ]; then
     exec /bin/busybox chroot /newroot /sbin/init
 fi
-if [ -x /newroot/usr/local/sbin/v86-init ]; then
-    exec /bin/busybox chroot /newroot /usr/local/sbin/v86-init
-fi
-echo "No init binary found in /newroot" >&2
+echo "No /sbin/init found in /newroot" >&2
 exec /bin/busybox sh
 EOF
     chmod 0755 "${TMP_CPIO_DIR}/init"
