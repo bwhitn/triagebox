@@ -12,6 +12,25 @@ CONFIG_ATA_PIIX=y
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 
+# Always prefer performance-oriented compiler optimization in kernel config.
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+# Available on newer kernels; ignored on kernels that do not expose this symbol.
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y
+
+# Single-vCPU serial-first profile: disable SMP/APIC/ACPI/CPU PM paths.
+CONFIG_SMP=n
+CONFIG_X86_LOCAL_APIC=n
+CONFIG_X86_IO_APIC=n
+CONFIG_X86_MPPARSE=n
+CONFIG_HOTPLUG_CPU=n
+CONFIG_ACPI=n
+CONFIG_X86_MCE=n
+CONFIG_CPU_FREQ=n
+CONFIG_X86_INTEL_PSTATE=n
+CONFIG_CPU_IDLE=n
+CONFIG_THERMAL=n
+
 # Remove networking device drivers.
 CONFIG_NETDEVICES=n
 CONFIG_WIRELESS=n
@@ -19,6 +38,8 @@ CONFIG_RFKILL=n
 CONFIG_BLUETOOTH=n
 CONFIG_CAN=n
 CONFIG_NFC=n
+# Keep NET/INET for software socket userspace, but drop IPv6 stack.
+CONFIG_IPV6=n
 
 # Remove sound stack.
 CONFIG_SOUND=n

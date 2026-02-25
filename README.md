@@ -89,8 +89,9 @@ make build-kernel-resume
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
 - `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)
-  `optimized`: `-O3` + LTO for best runtime speed
-  `fast`: `-O0`, LTO off for shorter build times
+  `optimized`: userspace/toolchain `-O3` + LTO for best runtime speed
+  `fast`: userspace/toolchain `-O0`, LTO off for shorter build times
+- `KERNEL_CFLAGS` (default `-O3`; passed as `LINUX_CFLAGS` so kernel builds stay high optimization by default)
 - `PREFETCH_DOWNLOADS` (default `1`; runs `make source` before compile)
 - `PREFETCH_REFINERY_WHEELS` (default `1`; pre-downloads binary-refinery wheel deps early, requires local `python3 -m pip` only when `REFINERY_REQUIRE_BUILDROOT_TARGET=0`)
 - `REFINERY_WHEELHOUSE_DIR` (default `.work/buildroot/dl/python-binary-refinery-wheelhouse`)
@@ -145,6 +146,7 @@ SHRINK_PAD_MB=1 SHRINK_MIN_MB=0 make build-disk
 BUILDROOT_PRIMARY_SITE=https://sources.buildroot.net BUILDROOT_PRIMARY_SITE_ONLY=1 make build-disk
 BUILD_PROFILE=optimized make build-disk
 BUILD_PROFILE=fast make build-disk
+KERNEL_CFLAGS=-O3 make build-kernel
 PREFETCH_DOWNLOADS=0 make build-disk
 PREFETCH_REFINERY_WHEELS=0 make build-disk
 FETCH_VGA_BIOS=1 make fetch-v86
