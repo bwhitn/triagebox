@@ -1,0 +1,50 @@
+# Serial-first v86 guest profile:
+# drop graphics, sound, mouse/input, cdrom and network device drivers.
+
+# Keep required core boot/storage/serial support explicit.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_EXT2_FS=y
+CONFIG_SCSI=y
+CONFIG_BLK_DEV_SD=y
+CONFIG_ATA=y
+CONFIG_ATA_PIIX=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+# Remove networking device drivers.
+CONFIG_NETDEVICES=n
+CONFIG_WIRELESS=n
+CONFIG_RFKILL=n
+CONFIG_BLUETOOTH=n
+CONFIG_CAN=n
+CONFIG_NFC=n
+
+# Remove sound stack.
+CONFIG_SOUND=n
+
+# Remove CD-ROM/SCSI generic character devices.
+CONFIG_CDROM=n
+CONFIG_BLK_DEV_SR=n
+CONFIG_CHR_DEV_SG=n
+
+# Remove graphics/video paths.
+CONFIG_AGP=n
+CONFIG_MEDIA_SUPPORT=n
+CONFIG_DRM=n
+CONFIG_FB=n
+CONFIG_VGA_CONSOLE=n
+CONFIG_FRAMEBUFFER_CONSOLE=n
+CONFIG_BACKLIGHT_CLASS_DEVICE=n
+
+# Remove mouse/input/hid stack.
+CONFIG_INPUT_MOUSE=n
+CONFIG_INPUT_KEYBOARD=n
+CONFIG_INPUT_JOYDEV=n
+CONFIG_MOUSE_PS2=n
+CONFIG_SERIO=n
+CONFIG_HID=n
+
+# Remove USB stack.
+CONFIG_USB_SUPPORT=n
+CONFIG_USB=n

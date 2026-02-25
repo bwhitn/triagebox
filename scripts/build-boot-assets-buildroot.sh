@@ -11,6 +11,7 @@ EXPORT_DIR="${WORK_DIR}/export"
 OVERLAY_DIR="${ROOT_DIR}/buildroot/overlay"
 BR2_EXTERNAL_DIR="${ROOT_DIR}/buildroot-external"
 BUSYBOX_NO_DHCP_FRAGMENT="${ROOT_DIR}/buildroot/busybox-no-dhcp.fragment"
+KERNEL_DRIVER_TRIM_FRAGMENT="${ROOT_DIR}/buildroot/linux-v86-trim.fragment"
 
 BUILDROOT_VERSION="${BUILDROOT_VERSION:-2026.02-rc1}"
 BUILDROOT_ARCHIVE_URL="${BUILDROOT_ARCHIVE_URL:-https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.xz}"
@@ -41,6 +42,7 @@ REFINERY_MISSING_BUILDROOT_REPORT="${REFINERY_MISSING_BUILDROOT_REPORT:-${ASSETS
 BUILD_LEGAL_INFO="${BUILD_LEGAL_INFO:-0}"
 LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar.gz}"
 INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
+BUILDROOT_ONLY="${BUILDROOT_ONLY:-all}" # all|kernel
 
 EXTRA_MB="${EXTRA_MB:-32}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
@@ -84,6 +86,10 @@ if [[ "${INITRD_MODE}" != "minimal" ]] && [[ "${INITRD_MODE}" != "full" ]]; then
     echo "INITRD_MODE must be 'minimal' or 'full' (got: ${INITRD_MODE})" >&2
     exit 1
 fi
+if [[ "${BUILDROOT_ONLY}" != "all" ]] && [[ "${BUILDROOT_ONLY}" != "kernel" ]]; then
+    echo "BUILDROOT_ONLY must be 'all' or 'kernel' (got: ${BUILDROOT_ONLY})" >&2
+    exit 1
+fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
     echo "REFINERY_SDIST_BUILD_JOBS must be an integer >= 1 (got: ${REFINERY_SDIST_BUILD_JOBS})" >&2
     exit 1
@@ -98,6 +104,10 @@ if [[ ! -d "${BR2_EXTERNAL_DIR}" ]]; then
 fi
 if [[ ! -f "${BUSYBOX_NO_DHCP_FRAGMENT}" ]]; then
     echo "Missing BusyBox no-DHCP fragment: ${BUSYBOX_NO_DHCP_FRAGMENT}" >&2
+    exit 1
+fi
+if [[ ! -f "${KERNEL_DRIVER_TRIM_FRAGMENT}" ]]; then
+    echo "Missing kernel trim fragment: ${KERNEL_DRIVER_TRIM_FRAGMENT}" >&2
     exit 1
 fi
 if [[ -n "${BUILDROOT_GLOBAL_PATCH_DIR}" ]] && [[ ! -d "${BUILDROOT_GLOBAL_PATCH_DIR}" ]]; then
@@ -336,6 +346,7 @@ esac
 cat >> "${OUT_DIR}/.config" <<EOF
 BR2_ROOTFS_OVERLAY="${OVERLAY_DIR}"
 BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="${BUSYBOX_NO_DHCP_FRAGMENT}"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="${KERNEL_DRIVER_TRIM_FRAGMENT}"
 BR2_TARGET_ROOTFS_TAR=y
 BR2_TARGET_ROOTFS_CPIO=y
 # BR2_TARGET_ROOTFS_EXT2 is not set
@@ -605,18 +616,49 @@ else
     echo "[3/8] Prefetch skipped (PREFETCH_DOWNLOADS=${PREFETCH_DOWNLOADS})"
 fi
 
-echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
-make -C "${BUILDROOT_SRC}" \
-    O="${OUT_DIR}" \
-    BR2_DL_DIR="${DL_DIR}" \
-    BR2_EXTERNAL="${BR2_EXTERNAL_DIR}" \
-    PYTHON_BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION}" \
-    PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR="${REFINERY_WHEELHOUSE_DIR}" \
-    PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY="${REFINERY_WHEEL_PLATFORM_PRIMARY}" \
-    PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK}" \
-    PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH="${require_prefetched_wheels}" \
-    PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
-    -j"${BUILDROOT_JOBS}"
+if [[ "${BUILDROOT_ONLY}" == "kernel" ]]; then
+    echo "[4/5] Building Buildroot kernel output (jobs=${BUILDROOT_JOBS})"
+    make -C "${BUILDROOT_SRC}" \
+        O="${OUT_DIR}" \
+        BR2_DL_DIR="${DL_DIR}" \
+        BR2_EXTERNAL="${BR2_EXTERNAL_DIR}" \
+        PYTHON_BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION}" \
+        PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR="${REFINERY_WHEELHOUSE_DIR}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY="${REFINERY_WHEEL_PLATFORM_PRIMARY}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK}" \
+        PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH="${require_prefetched_wheels}" \
+        PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
+        linux-rebuild \
+        -j"${BUILDROOT_JOBS}"
+else
+    echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
+    make -C "${BUILDROOT_SRC}" \
+        O="${OUT_DIR}" \
+        BR2_DL_DIR="${DL_DIR}" \
+        BR2_EXTERNAL="${BR2_EXTERNAL_DIR}" \
+        PYTHON_BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION}" \
+        PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR="${REFINERY_WHEELHOUSE_DIR}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY="${REFINERY_WHEEL_PLATFORM_PRIMARY}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK}" \
+        PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH="${require_prefetched_wheels}" \
+        PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
+        -j"${BUILDROOT_JOBS}"
+fi
+
+VMLINUX_PATH="${OUT_DIR}/images/bzImage"
+if [[ ! -f "${VMLINUX_PATH}" ]]; then
+    echo "Buildroot kernel image not found at ${VMLINUX_PATH}" >&2
+    exit 1
+fi
+
+if [[ "${BUILDROOT_ONLY}" == "kernel" ]]; then
+    echo "[5/5] Exporting kernel image"
+    cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
+    echo ""
+    echo "Kernel artifact generated:"
+    echo "  ${VMLINUX_OUT}"
+    exit 0
+fi
 
 legal_info_archive_name=""
 legal_info_archive_size_mb=0
@@ -663,15 +705,9 @@ else
     rm -f "${LEGAL_INFO_ARCHIVE}"
 fi
 
-VMLINUX_PATH="${OUT_DIR}/images/bzImage"
 ROOTFS_TAR="${OUT_DIR}/images/rootfs.tar"
 ROOTFS_CPIO_GZ="${OUT_DIR}/images/rootfs.cpio.gz"
 ROOTFS_CPIO="${OUT_DIR}/images/rootfs.cpio"
-
-if [[ ! -f "${VMLINUX_PATH}" ]]; then
-    echo "Buildroot kernel image not found at ${VMLINUX_PATH}" >&2
-    exit 1
-fi
 if [[ ! -f "${ROOTFS_TAR}" ]]; then
     echo "Buildroot rootfs tar not found at ${ROOTFS_TAR}" >&2
     exit 1

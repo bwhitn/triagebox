@@ -44,6 +44,34 @@ define PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
 endef
 PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EXTRAS
 
+# Some serial console setups report terminal width/height as zero in non-standard
+# PTY chains. refinery/lib/tools.py passes that to textwrap, which raises
+# "ValueError: invalid width 0". Patch terminalfit to guard COLUMNS/LINES.
+define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT
+	if [ -f $(@D)/refinery/lib/tools.py ] && \
+		! grep -q '__NIXBROWSER_TERMINALFIT_GUARD__' $(@D)/refinery/lib/tools.py; then \
+		printf '\n%s\n' \
+			'# __NIXBROWSER_TERMINALFIT_GUARD__' \
+			'try:' \
+			'    _nixbrowser_terminalfit_original = terminalfit' \
+			'except NameError:' \
+			'    _nixbrowser_terminalfit_original = None' \
+			'' \
+			'if _nixbrowser_terminalfit_original is not None:' \
+			'    def terminalfit(*args, **kwargs):' \
+			'        import os as _nixbrowser_os' \
+			'        _nixbrowser_cols = _nixbrowser_os.environ.get("COLUMNS", "")' \
+			'        if not _nixbrowser_cols.isdigit() or int(_nixbrowser_cols) <= 0:' \
+			'            _nixbrowser_os.environ["COLUMNS"] = "120"' \
+			'        _nixbrowser_lines = _nixbrowser_os.environ.get("LINES", "")' \
+			'        if not _nixbrowser_lines.isdigit() or int(_nixbrowser_lines) <= 0:' \
+			'            _nixbrowser_os.environ["LINES"] = "40"' \
+			'        return _nixbrowser_terminalfit_original(*args, **kwargs)' \
+			>> $(@D)/refinery/lib/tools.py; \
+	fi
+endef
+PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT
+
 define PYTHON_BINARY_REFINERY_PREPARE_SCRIPT_STAGING
 	rm -rf $(@D)/.scripts
 	mkdir -p $(@D)/.scripts

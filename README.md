@@ -11,6 +11,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 ## What is included
 
 - `buildroot/overlay/`: files copied into the guest filesystem
+- `buildroot/linux-v86-trim.fragment`: Linux kernel fragment that strips unused drivers (video/audio/cdrom/mouse/network-device stack)
 - `buildroot-external/`: custom Buildroot package metadata (includes `python-binary-refinery`)
 - `scripts/build-boot-assets-buildroot.sh`: builds guest artifacts (`buildroot-linux.img`, `vmlinuz`, `initrd.img`)
 - `scripts/write-build-config.sh`: writes build-time UI flags
@@ -59,6 +60,18 @@ Resume a failed Buildroot disk build without deleting `.work/buildroot/output`:
 make build-disk-resume
 ```
 
+Build only the kernel artifact (`public/assets/vmlinuz`) without rebuilding disk/initrd:
+
+```bash
+make build-kernel
+```
+
+Resume kernel-only build:
+
+```bash
+make build-kernel-resume
+```
+
 ## Build knobs
 
 - `BUILDROOT_VERSION` (default `2026.02-rc1`)
@@ -70,6 +83,8 @@ make build-disk-resume
 - `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
 - `BUILDROOT_GLOBAL_PATCH_DIR` (default `buildroot/patches`; applies local package patches during Buildroot builds)
 - `INITRD_MODE` (default `minimal`; `minimal` boots rootfs from disk image via tiny initrd, `full` uses Buildroot `rootfs.cpio.gz` as initrd)
+- `BUILDROOT_ONLY` (default `all`; set `kernel` to build/export kernel only and skip disk/initrd generation)
+- Linux kernel always applies `buildroot/linux-v86-trim.fragment` to remove unused driver classes for this serial-first VM profile.
 - If `BR2_DOWNLOAD_FORCE_CHECK_HASHES=y` from the base defconfig and the pinned kernel patchlevel is no longer present in Buildroot's `linux.hash`, the build script auto-adjusts to the newest hashed patchlevel in the same major/minor series.
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
@@ -121,6 +136,7 @@ Examples:
 
 ```bash
 BUILDROOT_VERSION=2026.02-rc1 make build-disk
+BUILDROOT_ONLY=kernel make build-disk
 INITRD_MODE=minimal make build-disk
 INITRD_MODE=full make build-disk
 DISK_MB=512 make build-disk
