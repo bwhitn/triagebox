@@ -49,6 +49,8 @@
   const customDiskFileEl = document.getElementById("custom-disk-file");
   const uploadDiskBtn = document.getElementById("upload-disk");
   const clearCustomDiskBtn = document.getElementById("clear-custom-disk");
+  const mountExtraDiskBtn = document.getElementById("mount-extra-disk");
+  const unmountExtraDiskBtn = document.getElementById("unmount-extra-disk");
   const diskStatusEl = document.getElementById("disk-status");
   const downloadUploadedDiskEl = document.getElementById("download-uploaded-disk");
   const diskFilesBrowserEl = document.getElementById("disk-files-browser");
@@ -672,6 +674,58 @@
     return true;
   }
 
+  function sendSerialText(text) {
+    if (!serialEnabled || typeof text !== "string" || text.length === 0) {
+      return false;
+    }
+    const bytes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      bytes.push(text.charCodeAt(i) & 0xff);
+    }
+    return sendSerialBytes(bytes);
+  }
+
+  function runShellCommand(command, statusLabel) {
+    if (!serialEnabled) {
+      setStatus("serial disabled (cannot send shell commands)");
+      return;
+    }
+    if (!hasRunningVm()) {
+      setStatus("stopped (start VM first)");
+      return;
+    }
+    const cmd = `${command}\n`;
+    if (!sendSerialText(cmd)) {
+      setStatus("serial not ready");
+      return;
+    }
+    if (statusLabel) {
+      setStatus(statusLabel);
+    }
+  }
+
+  function mountExtraDiskFromUi() {
+    const command = [
+      "mkdir -p /root",
+      "(",
+      "mount -t auto /dev/sdb1 /root 2>/dev/null",
+      "|| mount -t auto /dev/sdb /root 2>/dev/null",
+      "|| mount -t auto /dev/vdb1 /root 2>/dev/null",
+      "|| mount -t auto /dev/vdb /root 2>/dev/null",
+      "|| mount -t auto /dev/hdb1 /root 2>/dev/null",
+      "|| mount -t auto /dev/hdb /root 2>/dev/null",
+      ")",
+      "&& echo '[extra-disk] mounted /root'",
+      "|| echo '[extra-disk] mount failed'"
+    ].join(" ");
+    runShellCommand(command, "requested extra disk mount");
+  }
+
+  function unmountExtraDiskFromUi() {
+    const command = "umount /root 2>/dev/null && echo '[extra-disk] unmounted /root' || echo '[extra-disk] unmount skipped/fail'";
+    runShellCommand(command, "requested extra disk unmount");
+  }
+
   async function sendSpecialKeys(name) {
     if (!hasRunningVm()) {
       setStatus("stopped (start VM first)");
@@ -1032,6 +1086,16 @@
   if (clearCustomDiskBtn) {
     clearCustomDiskBtn.addEventListener("click", () => {
       void clearCustomDisk();
+    });
+  }
+  if (mountExtraDiskBtn) {
+    mountExtraDiskBtn.addEventListener("click", () => {
+      mountExtraDiskFromUi();
+    });
+  }
+  if (unmountExtraDiskBtn) {
+    unmountExtraDiskBtn.addEventListener("click", () => {
+      unmountExtraDiskFromUi();
     });
   }
   if (diskFilesUpBtn) {
