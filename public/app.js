@@ -707,6 +707,7 @@
   function mountExtraDiskFromUi() {
     const command = [
       "mkdir -p /root",
+      "&&",
       "(",
       "mount -t auto /dev/sdb1 /root 2>/dev/null",
       "|| mount -t auto /dev/sdb /root 2>/dev/null",
