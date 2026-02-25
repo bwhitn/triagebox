@@ -1,9 +1,4 @@
 (() => {
-  const SERIAL_MIN_COLS = 80;
-  const SERIAL_MAX_COLS = 120;
-  const SERIAL_MIN_ROWS = 24;
-  const SERIAL_MAX_ROWS = 45;
-
   const config = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
   const serialEnabled = config.enableSerial === true;
   const xtermCtor = (() => {
@@ -347,12 +342,6 @@
     sampleTimer = null;
   }
 
-  function clampSerialSize(cols, rows) {
-    const safeCols = Math.max(SERIAL_MIN_COLS, Math.min(SERIAL_MAX_COLS, cols));
-    const safeRows = Math.max(SERIAL_MIN_ROWS, Math.min(SERIAL_MAX_ROWS, rows));
-    return { cols: safeCols, rows: safeRows };
-  }
-
   function fitSerialTerminal() {
     if (!serialEnabled || !serialUseXterm || !serialXtermEl || !emulator?.serial_adapter?.term) {
       return;
@@ -361,10 +350,6 @@
     const term = emulator.serial_adapter.term;
     if (serialFitAddon && typeof serialFitAddon.fit === "function") {
       serialFitAddon.fit();
-      const clamped = clampSerialSize(term.cols || SERIAL_MIN_COLS, term.rows || SERIAL_MIN_ROWS);
-      if (term.cols !== clamped.cols || term.rows !== clamped.rows) {
-        term.resize(clamped.cols, clamped.rows);
-      }
       return;
     }
 
@@ -379,12 +364,8 @@
       return;
     }
 
-    const clamped = clampSerialSize(
-      Math.floor(viewportWidth / cellWidth),
-      Math.floor(viewportHeight / cellHeight)
-    );
-    const cols = clamped.cols;
-    const rows = clamped.rows;
+    const cols = Math.max(20, Math.floor(viewportWidth / cellWidth));
+    const rows = Math.max(5, Math.floor(viewportHeight / cellHeight));
 
     if (term.cols !== cols || term.rows !== rows) {
       term.resize(cols, rows);

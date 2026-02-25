@@ -42,7 +42,7 @@ This does:
 
 1. Download v86 runtime assets to `public/assets/v86/` and terminal assets to `public/assets/xterm/`
 2. Build Buildroot kernel/rootfs output
-3. Generate Buildroot legal-info and archive it as `public/assets/buildroot-legal-info.tar.gz`
+3. Optionally generate Buildroot legal-info and archive it as `public/assets/buildroot-legal-info.tar.gz` (disabled by default)
 4. Create `public/assets/buildroot-linux.img` (ext2)
 5. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
 6. Write `public/build-config.js`
@@ -89,7 +89,7 @@ make build-disk-resume
 - `REFINERY_MISSING_WHEELS_REPORT` (default `public/assets/binary-refinery-missing-wheels.txt`)
 - `REFINERY_BUILDROOT_PROVIDED_REPORT` (default `public/assets/binary-refinery-buildroot-provided.txt`)
 - `REFINERY_MISSING_BUILDROOT_REPORT` (default `public/assets/binary-refinery-missing-buildroot-packages.txt`)
-- `BUILD_LEGAL_INFO` (default `1`; runs `make legal-info` and publishes archive)
+- `BUILD_LEGAL_INFO` (default `0`; set to `1` to run `make legal-info` and publish archive)
 - `LEGAL_INFO_ARCHIVE` (default `public/assets/buildroot-legal-info.tar.gz`)
 - Python 3 is always included
 - binary-refinery is always included
@@ -140,7 +140,7 @@ REFINERY_SDIST_SKIP_PACKAGES="pikepdf icicle-emu speakeasy-emulator-refined lief
 REFINERY_WHEEL_PLATFORM_PRIMARY=manylinux_2_28_i686 REFINERY_WHEEL_PLATFORM_FALLBACK=manylinux2014_i686 make build-disk
 REFINERY_WHEEL_STRICT=1 make build-disk
 REFINERY_WHEEL_STRICT=0 make build-disk
-BUILD_LEGAL_INFO=0 make build-disk
+BUILD_LEGAL_INFO=1 make build-disk
 BINARY_REFINERY_VERSION=0.9.26 make build-disk
 PYTHON_LIEF_VERSION=0.17.3 make build-disk
 ENABLE_SERIAL=0 make write-build-config
@@ -155,7 +155,7 @@ make serve
 ```
 
 Open `http://localhost:8080`.
-Download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
+If enabled at build time, download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
