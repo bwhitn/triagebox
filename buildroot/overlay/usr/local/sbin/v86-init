@@ -20,10 +20,6 @@ case "${TERM:-}" in
         ;;
 esac
 
-: "${COLUMNS:=120}"
-: "${LINES:=40}"
-export COLUMNS LINES
-
 run_stty() {
     if command -v stty >/dev/null 2>&1; then
         stty "$@"
@@ -36,7 +32,7 @@ run_stty() {
     return 127
 }
 
-run_stty sane rows "$LINES" cols "$COLUMNS" 2>/dev/null || true
+run_stty sane 2>/dev/null || true
 
 echo ""
 echo "Buildroot Linux running on v86"
@@ -57,11 +53,17 @@ launch_shell() {
     }
 
     if command -v cttyhack >/dev/null 2>&1; then
-        run_setsid cttyhack /bin/sh -l
+        run_setsid cttyhack /bin/sh -c '
+            /bin/busybox stty sane 2>/dev/null || stty sane 2>/dev/null || true
+            exec /bin/sh -l
+        '
         return
     fi
     if /bin/busybox --list 2>/dev/null | grep -qx "cttyhack"; then
-        run_setsid /bin/busybox cttyhack /bin/sh -l
+        run_setsid /bin/busybox cttyhack /bin/sh -c '
+            /bin/busybox stty sane 2>/dev/null || stty sane 2>/dev/null || true
+            exec /bin/sh -l
+        '
         return
     fi
     if [ -c /dev/ttyS0 ]; then
