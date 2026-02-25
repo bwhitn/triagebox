@@ -32,7 +32,7 @@ run_stty() {
     return 127
 }
 
-run_stty sane 2>/dev/null || true
+run_stty sane opost onlcr 2>/dev/null || true
 
 echo ""
 echo "Buildroot Linux running on v86"
@@ -54,14 +54,14 @@ launch_shell() {
 
     if command -v cttyhack >/dev/null 2>&1; then
         run_setsid cttyhack /bin/sh -c '
-            /bin/busybox stty sane 2>/dev/null || stty sane 2>/dev/null || true
+            /bin/busybox stty sane opost onlcr 2>/dev/null || stty sane opost onlcr 2>/dev/null || true
             exec /bin/sh -l
         '
         return
     fi
     if /bin/busybox --list 2>/dev/null | grep -qx "cttyhack"; then
         run_setsid /bin/busybox cttyhack /bin/sh -c '
-            /bin/busybox stty sane 2>/dev/null || stty sane 2>/dev/null || true
+            /bin/busybox stty sane opost onlcr 2>/dev/null || stty sane opost onlcr 2>/dev/null || true
             exec /bin/sh -l
         '
         return
@@ -70,8 +70,8 @@ launch_shell() {
         # Fallback path when cttyhack is unavailable:
         # open ttyS0 as a session leader so it becomes controlling TTY.
         run_setsid /bin/sh -c '
-            /bin/busybox stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
-                || stty sane intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
+            /bin/busybox stty sane opost onlcr intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
+                || stty sane opost onlcr intr ^C quit ^\\ erase ^? kill ^U eof ^D < /dev/ttyS0 >/dev/ttyS0 2>&1 \
                 || true
             exec /bin/sh -l < /dev/ttyS0 > /dev/ttyS0 2>&1
         '

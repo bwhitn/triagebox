@@ -10,6 +10,18 @@
     }
     return null;
   })();
+  const serialXtermCtor = (() => {
+    if (!xtermCtor) {
+      return null;
+    }
+    // Normalize LF-only output from the guest serial stream so line starts
+    // stay anchored at column 0 in xterm.js.
+    return class SerialTerminal extends xtermCtor {
+      constructor(options = {}) {
+        super(Object.assign({ convertEol: true }, options || {}));
+      }
+    };
+  })();
   const xtermFitAddonCtor = (() => {
     if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
       return window.FitAddon.FitAddon;
@@ -34,7 +46,7 @@
   const serialXtermEl = document.getElementById("serial-xterm");
   const vgaPanelEl = document.getElementById("vga-panel");
   const specialKeyButtons = document.querySelectorAll("[data-special-key]");
-  const serialUseXterm = serialEnabled && !!xtermCtor;
+  const serialUseXterm = serialEnabled && !!serialXtermCtor;
 
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
@@ -56,6 +68,9 @@
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
   let serialFitAddon = null;
+  let guestWinsizeSyncTimer = 0;
+  let guestWinsizePending = null;
+  let guestWinsizeApplied = null;
   let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
@@ -332,6 +347,7 @@
     const term = emulator.serial_adapter.term;
     if (serialFitAddon && typeof serialFitAddon.fit === "function") {
       serialFitAddon.fit();
+      queueGuestWinsizeSync(term.cols, term.rows);
       return;
     }
 
@@ -352,6 +368,62 @@
     if (term.cols !== cols || term.rows !== rows) {
       term.resize(cols, rows);
     }
+    queueGuestWinsizeSync(term.cols, term.rows);
+  }
+
+  function applyGuestWinsize(cols, rows) {
+    if (
+      !serialEnabled ||
+      !Number.isInteger(cols) ||
+      !Number.isInteger(rows) ||
+      cols <= 0 ||
+      rows <= 0 ||
+      !emulator ||
+      typeof emulator.serial_send_bytes !== "function"
+    ) {
+      return;
+    }
+
+    if (guestWinsizeApplied && guestWinsizeApplied.cols === cols && guestWinsizeApplied.rows === rows) {
+      return;
+    }
+
+    const term = emulator?.serial_adapter?.term;
+    if (
+      term?.buffer?.active &&
+      term?.buffer?.normal &&
+      term.buffer.active !== term.buffer.normal
+    ) {
+      // Skip command injection while full-screen TUIs are active.
+      setTimeout(() => queueGuestWinsizeSync(cols, rows), 400);
+      return;
+    }
+
+    const cmd =
+      `stty rows ${rows} cols ${cols} 2>/dev/null || ` +
+      `/bin/busybox stty rows ${rows} cols ${cols} 2>/dev/null\r`;
+    const bytes = new TextEncoder().encode(cmd);
+    emulator.serial_send_bytes(0, bytes);
+    guestWinsizeApplied = { cols, rows };
+  }
+
+  function queueGuestWinsizeSync(cols, rows) {
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0) {
+      return;
+    }
+    guestWinsizePending = { cols, rows };
+
+    if (guestWinsizeSyncTimer) {
+      clearTimeout(guestWinsizeSyncTimer);
+    }
+    guestWinsizeSyncTimer = setTimeout(() => {
+      guestWinsizeSyncTimer = 0;
+      if (!guestWinsizePending) {
+        return;
+      }
+      applyGuestWinsize(guestWinsizePending.cols, guestWinsizePending.rows);
+      guestWinsizePending = null;
+    }, 100);
   }
 
   function scheduleSerialFit() {
@@ -508,7 +580,7 @@
       vmOptions.serial_console = {
         type: "xtermjs",
         container: serialXtermEl,
-        xterm_lib: xtermCtor
+        xterm_lib: serialXtermCtor
       };
     } else {
       vmOptions.uart1 = false;
@@ -527,6 +599,7 @@
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
       completeDownloadMeter();
+      guestWinsizeApplied = null;
       setupSerialResizeHandling();
       if (serialEnabled && serialUseXterm) {
         const term = emulator?.serial_adapter?.term;

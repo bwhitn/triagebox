@@ -29,7 +29,7 @@ if [ -t 0 ]; then
     case "${_rows:-}" in
         ""|*[!0-9]*|0) _rows=40 ;;
     esac
-    run_stty rows "$_rows" cols "$_cols" 2>/dev/null || true
+    run_stty rows "$_rows" cols "$_cols" opost onlcr 2>/dev/null || true
     # Let interactive shells rely on ioctl instead of fixed env vars.
     unset COLUMNS LINES
 else
