@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build build-resume preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk serve docker-serve clean
+.PHONY: build build-resume preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve docker-serve clean
 
 build: fetch-v86 build-disk
 
@@ -36,6 +36,9 @@ disk-usage:
 
 shrink-disk:
 	./scripts/shrink-image.sh
+
+audit-runtime:
+	./scripts/audit-runtime-rootfs.sh
 
 serve:
 	./scripts/serve-local.sh

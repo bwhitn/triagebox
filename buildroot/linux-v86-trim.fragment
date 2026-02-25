@@ -5,6 +5,9 @@
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_EXT2_FS=y
+CONFIG_EXT3_FS=n
+CONFIG_EXT4_FS=n
+CONFIG_AUTOFS4_FS=n
 CONFIG_SCSI=y
 CONFIG_BLK_DEV_SD=y
 CONFIG_ATA=y
@@ -30,6 +33,7 @@ CONFIG_CPU_FREQ=n
 CONFIG_X86_INTEL_PSTATE=n
 CONFIG_CPU_IDLE=n
 CONFIG_THERMAL=n
+CONFIG_MODULES=n
 
 # Remove networking device drivers.
 CONFIG_NETDEVICES=n
@@ -40,6 +44,33 @@ CONFIG_CAN=n
 CONFIG_NFC=n
 # Keep NET/INET for software socket userspace, but drop IPv6 stack.
 CONFIG_IPV6=n
+
+# No active hwrng device in this VM profile; keep kernel CSPRNG on CPU/software entropy.
+CONFIG_HW_RANDOM=n
+CONFIG_HW_RANDOM_INTEL=n
+CONFIG_HW_RANDOM_AMD=n
+CONFIG_HW_RANDOM_GEODE=n
+CONFIG_HW_RANDOM_VIA=n
+CONFIG_HW_RANDOM_VIRTIO=n
+
+# Keep only minimal virtualization support requested for this target.
+CONFIG_VIRTIO_BALLOON=y
+CONFIG_VIRTIO_MMIO=y
+CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y
+CONFIG_VIRTIO_CONSOLE=n
+
+# Drop kernel observability/debug subsystems not needed in this appliance profile.
+CONFIG_PERF_EVENTS=n
+CONFIG_BPF=n
+CONFIG_KPROBES=n
+CONFIG_FTRACE=n
+CONFIG_FUNCTION_TRACER=n
+
+# Drop IPC/container features not required for this single-purpose runtime.
+CONFIG_CGROUPS=n
+CONFIG_SYSVIPC=n
+CONFIG_POSIX_MQUEUE=n
+CONFIG_NAMESPACES=n
 
 # Remove sound stack.
 CONFIG_SOUND=n
