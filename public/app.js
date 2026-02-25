@@ -10,24 +10,6 @@
     }
     return null;
   })();
-  const serialXtermCtor = (() => {
-    if (!xtermCtor) {
-      return null;
-    }
-    // Normalize LF-only output from the guest serial stream so line starts
-    // stay anchored at column 0 in xterm.js.
-    return class SerialTerminal extends xtermCtor {
-      constructor(options = {}) {
-        super(Object.assign({
-          convertEol: true,
-          // Keep metrics stable across browsers; avoids ultra-wide tiny-cell fits.
-          fontFamily: "Iosevka, JetBrains Mono, SFMono-Regular, monospace",
-          fontSize: 16,
-          lineHeight: 1.1
-        }, options || {}));
-      }
-    };
-  })();
   const xtermFitAddonCtor = (() => {
     if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
       return window.FitAddon.FitAddon;
@@ -52,7 +34,7 @@
   const serialXtermEl = document.getElementById("serial-xterm");
   const vgaPanelEl = document.getElementById("vga-panel");
   const specialKeyButtons = document.querySelectorAll("[data-special-key]");
-  const serialUseXterm = serialEnabled && !!serialXtermCtor;
+  const serialUseXterm = serialEnabled && !!xtermCtor;
 
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
@@ -526,7 +508,7 @@
       vmOptions.serial_console = {
         type: "xtermjs",
         container: serialXtermEl,
-        xterm_lib: serialXtermCtor
+        xterm_lib: xtermCtor
       };
     } else {
       vmOptions.uart1 = false;
