@@ -53,6 +53,11 @@
   const unmountExtraDiskBtn = document.getElementById("unmount-extra-disk");
   const diskStatusEl = document.getElementById("disk-status");
   const downloadUploadedDiskEl = document.getElementById("download-uploaded-disk");
+  const diskDownloadPromptEl = document.getElementById("disk-download-prompt");
+  const diskDownloadMessageEl = document.getElementById("disk-download-message");
+  const diskDownloadListEl = document.getElementById("disk-download-list");
+  const diskDownloadSelectedBtn = document.getElementById("disk-download-selected");
+  const diskDownloadDismissBtn = document.getElementById("disk-download-dismiss");
   const diskFilesBrowserEl = document.getElementById("disk-files-browser");
   const diskFilesPathEl = document.getElementById("disk-files-path");
   const diskFilesMessageEl = document.getElementById("disk-files-message");
@@ -81,6 +86,7 @@
   let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
   let diskBrowsePath = "/";
+  let diskPromptFiles = [];
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -154,6 +160,167 @@
       return;
     }
     diskFilesListEl.textContent = "";
+  }
+
+  function setDiskDownloadPromptVisible(visible) {
+    if (!diskDownloadPromptEl) {
+      return;
+    }
+    diskDownloadPromptEl.hidden = !visible;
+  }
+
+  function setDiskDownloadMessage(text) {
+    if (!diskDownloadMessageEl) {
+      return;
+    }
+    diskDownloadMessageEl.textContent = text;
+  }
+
+  function clearDiskDownloadPrompt() {
+    diskPromptFiles = [];
+    if (diskDownloadListEl) {
+      diskDownloadListEl.textContent = "";
+    }
+    setDiskDownloadMessage("No file scan results yet.");
+    setDiskDownloadPromptVisible(false);
+  }
+
+  function triggerDiskFileDownload(path, name) {
+    const link = document.createElement("a");
+    link.href = `/api/upload-disk/file?path=${encodeURIComponent(path)}`;
+    link.download = name || basename(path);
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function renderDiskDownloadPrompt(files) {
+    if (!diskDownloadPromptEl || !diskDownloadListEl) {
+      return;
+    }
+    diskPromptFiles = Array.isArray(files) ? files.slice() : [];
+    diskDownloadListEl.textContent = "";
+    if (diskPromptFiles.length === 0) {
+      setDiskDownloadMessage("No regular files found in uploaded disk scan.");
+      setDiskDownloadPromptVisible(true);
+      return;
+    }
+
+    setDiskDownloadMessage(`Found ${diskPromptFiles.length} file(s). Select and download.`);
+    for (const file of diskPromptFiles) {
+      const item = document.createElement("li");
+
+      const left = document.createElement("span");
+      left.className = "disk-file-name";
+      left.textContent = file.path || file.name || "unknown";
+      item.appendChild(left);
+
+      const actions = document.createElement("span");
+      actions.className = "disk-file-actions";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.setAttribute("data-disk-path", file.path || "");
+      checkbox.setAttribute("data-disk-name", file.name || basename(file.path || ""));
+      actions.appendChild(checkbox);
+
+      const size = document.createElement("span");
+      size.className = "disk-file-meta";
+      size.textContent = Number.isFinite(file.size) ? formatBytes(file.size) : "n/a";
+      actions.appendChild(size);
+
+      const one = document.createElement("button");
+      one.type = "button";
+      one.textContent = "Download";
+      one.addEventListener("click", () => {
+        const path = file.path || "";
+        if (!path) {
+          return;
+        }
+        triggerDiskFileDownload(path, file.name || basename(path));
+      });
+      actions.appendChild(one);
+
+      item.appendChild(actions);
+      diskDownloadListEl.appendChild(item);
+    }
+    setDiskDownloadPromptVisible(true);
+  }
+
+  function downloadSelectedDiskPromptFiles() {
+    if (!diskDownloadListEl) {
+      return;
+    }
+    const checked = Array.from(
+      diskDownloadListEl.querySelectorAll('input[type="checkbox"][data-disk-path]:checked')
+    );
+    if (checked.length === 0) {
+      setDiskDownloadMessage("No files selected.");
+      return;
+    }
+    setDiskDownloadMessage(`Starting ${checked.length} download(s)...`);
+    checked.forEach((input, index) => {
+      const path = input.getAttribute("data-disk-path") || "";
+      const name = input.getAttribute("data-disk-name") || basename(path);
+      if (!path) {
+        return;
+      }
+      window.setTimeout(() => {
+        triggerDiskFileDownload(path, name);
+      }, index * 80);
+    });
+  }
+
+  async function fetchDiskDirectoryEntries(path) {
+    const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+    if (!response.ok) {
+      const msg = await response.text();
+      throw new Error(msg || `http ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function scanDiskRegularFiles(maxFiles = 120, maxDirs = 256) {
+    const files = [];
+    const queue = ["/"];
+    const visited = new Set(["/"]);
+    let dirsScanned = 0;
+
+    while (queue.length > 0 && files.length < maxFiles && dirsScanned < maxDirs) {
+      const path = queue.shift();
+      dirsScanned += 1;
+      let payload;
+      try {
+        payload = await fetchDiskDirectoryEntries(path);
+      } catch (err) {
+        continue;
+      }
+      const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+      for (const entry of entries) {
+        if (!entry || typeof entry !== "object") {
+          continue;
+        }
+        if (entry.type === "regular" && typeof entry.path === "string") {
+          files.push({
+            path: entry.path,
+            name: entry.name || basename(entry.path),
+            size: entry.size
+          });
+          if (files.length >= maxFiles) {
+            break;
+          }
+          continue;
+        }
+        if (entry.type === "dir" && typeof entry.path === "string" && !visited.has(entry.path)) {
+          visited.add(entry.path);
+          queue.push(entry.path);
+        }
+      }
+    }
+
+    return files;
   }
 
   function parentDiskPath(path) {
@@ -391,6 +558,7 @@
       downloadUploadedDiskEl.hidden = true;
       downloadUploadedDiskEl.removeAttribute("href");
     }
+    clearDiskDownloadPrompt();
     setDiskFilesVisible(false);
     clearDiskFilesList();
     setDiskStatus(`upload api unavailable (${reason})`);
@@ -398,6 +566,7 @@
 
   function applyDiskState(payload) {
     const data = payload && typeof payload === "object" ? payload : {};
+    clearDiskDownloadPrompt();
     if (data.uploaded === true && typeof data.url === "string" && data.url.length > 0) {
       activeExtraDiskImage = data.url;
       const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
@@ -958,6 +1127,16 @@
       applyDiskState(payload);
       diskBrowsePath = "/";
       await loadDiskEntries(diskBrowsePath);
+      try {
+        setDiskDownloadMessage("Scanning uploaded disk for files...");
+        setDiskDownloadPromptVisible(true);
+        const files = await scanDiskRegularFiles();
+        renderDiskDownloadPrompt(files);
+      } catch (scanErr) {
+        const scanMsg = scanErr && scanErr.message ? scanErr.message : String(scanErr);
+        setDiskDownloadMessage(`scan failed (${scanMsg})`);
+        setDiskDownloadPromptVisible(true);
+      }
       await resetVmInstance();
       setStatus("idle (custom extra disk uploaded; choose files below to download)");
     } catch (err) {
@@ -983,6 +1162,7 @@
   async function clearCustomDisk() {
     if (!diskApiAvailable) {
       applyDiskState({ uploaded: false });
+      clearDiskDownloadPrompt();
       await resetVmInstance();
       setStatus("idle (default extra disk)");
       return;
@@ -1008,6 +1188,7 @@
         throw new Error(message || `http ${response.status}`);
       }
       applyDiskState({ uploaded: false });
+      clearDiskDownloadPrompt();
       await resetVmInstance();
       setStatus("idle (default extra disk)");
       if (customDiskFileEl) {
@@ -1107,6 +1288,16 @@
   if (diskFilesRefreshBtn) {
     diskFilesRefreshBtn.addEventListener("click", () => {
       void loadDiskEntries(diskBrowsePath);
+    });
+  }
+  if (diskDownloadSelectedBtn) {
+    diskDownloadSelectedBtn.addEventListener("click", () => {
+      downloadSelectedDiskPromptFiles();
+    });
+  }
+  if (diskDownloadDismissBtn) {
+    diskDownloadDismissBtn.addEventListener("click", () => {
+      clearDiskDownloadPrompt();
     });
   }
 
