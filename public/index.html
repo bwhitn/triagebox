@@ -29,28 +29,20 @@
 
       <section class="panel" id="disk-panel">
         <h2>Root Exchange</h2>
-        <p>Exchange files with guest <code>/root</code> through the server-managed extra disk.</p>
+        <p>Import files from the server into the VM root filesystem (for example under <code>/root</code>).</p>
         <div class="controls">
           <input id="inject-server-src" type="text" placeholder="assets/sample.bin">
-          <input id="inject-disk-path" type="text" placeholder="/from-server.bin">
-          <button id="inject-disk-file-btn" type="button">Import Server File to Extra Disk</button>
+          <input id="inject-disk-path" type="text" placeholder="/root/from-server.bin">
+          <button id="inject-disk-file-btn" type="button">Import Server File to VM RootFS</button>
         </div>
-        <div class="controls">
-          <button id="sync-extra-disk" type="button">Sync /root to Server</button>
-          <label for="auto-sync-extra-disk">
-            <input id="auto-sync-extra-disk" type="checkbox">
-            Auto Sync
-          </label>
-          <input id="auto-sync-seconds" type="number" min="3" value="15" title="Auto sync interval (seconds)">
-        </div>
-        <p id="disk-status">disk: exchange default</p>
+        <p id="disk-status">disk: checking rootfs api...</p>
         <div id="disk-files-browser" class="disk-files-browser" hidden>
           <div class="controls">
             <button id="disk-files-up" type="button">Up</button>
             <button id="disk-files-refresh" type="button">Refresh</button>
-            <code id="disk-files-path">/</code>
+            <code id="disk-files-path">/root</code>
           </div>
-          <p id="disk-files-message">Run Sync /root to Server once to initialize exchange disk browsing.</p>
+          <p id="disk-files-message">Loading VM rootfs view...</p>
           <ul id="disk-files-list" class="disk-files-list"></ul>
         </div>
       </section>

@@ -183,23 +183,19 @@ make serve
 
 Open `http://localhost:8080`.
 (`make server` is an alias for `make serve`.)
-If `public/assets/default-extra.img` is missing, `make serve` auto-creates a blank ext2
-secondary disk image (size controlled by `DEFAULT_EXTRA_DISK_MB`, default `256`).
 If enabled at build time, download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
-Buildroot root disk remains the primary boot/root disk (`hda`/`/dev/sda`).
-The exchange disk is secondary (`hdb`/`/dev/sdb`) and server-managed at `public/uploads/custom-disk.img`.
-The UI exchange workflow:
-- `Import Server File to Extra Disk` copies an existing server file into the exchange disk via
-  `POST /api/upload-disk/import?src=assets/example.bin&path=/example.bin`
-- `Sync /root to Server` exports the current VM extra disk buffer back to `public/uploads/custom-disk.img`
-- Optional `Auto Sync` repeats the export on an interval
-- File browser can list and download files with `GET /api/upload-disk/files?path=/...` and `GET /api/upload-disk/file?path=/...`
+Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
+The UI rootfs import workflow:
+- `Import Server File to VM RootFS` copies an existing server file into the Buildroot boot disk via
+  `POST /api/vm-root/import?src=assets/example.bin&path=/root/example.bin`
+- File browser can list and download files with `GET /api/vm-root/files?path=/...` and `GET /api/vm-root/file?path=/...`
 Server import source root defaults to `public/` and can be changed with `DISK_IMPORT_ROOT`.
+Target root disk defaults to `public/assets/buildroot-linux.img` and can be changed with `VM_ROOT_DISK`.
 When importing a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
-loads the updated exchange disk image.
+boots with the updated root filesystem image.
 
 ### Docker server (Debian trixie-slim)
 
@@ -207,15 +203,13 @@ loads the updated exchange disk image.
 make docker-serve
 ```
 
-`make docker-serve` also ensures the same default blank ext2 secondary disk exists on host before starting the container.
-
 If Docker socket permissions fail:
 
 ```bash
 DOCKER_USE_SUDO=1 make docker-serve
 ```
 
-The compose files mount `public/uploads` read-write so custom disk uploads work in container mode too.
+The compose files mount `public/uploads` read-write for API scratch files in container mode.
 
 ## Configure boot disk changes
 

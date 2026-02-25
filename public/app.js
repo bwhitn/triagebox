@@ -49,9 +49,6 @@
   const injectServerSrcEl = document.getElementById("inject-server-src");
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
-  const syncExtraDiskBtn = document.getElementById("sync-extra-disk");
-  const autoSyncExtraDiskEl = document.getElementById("auto-sync-extra-disk");
-  const autoSyncSecondsEl = document.getElementById("auto-sync-seconds");
   const diskStatusEl = document.getElementById("disk-status");
   const diskFilesBrowserEl = document.getElementById("disk-files-browser");
   const diskFilesPathEl = document.getElementById("disk-files-path");
@@ -61,7 +58,6 @@
   const diskFilesRefreshBtn = document.getElementById("disk-files-refresh");
 
   const defaultBootDiskImage = config.diskImage || "assets/buildroot-linux.img";
-  const defaultExtraDiskImage = config.extraDiskImage || "assets/default-extra.img";
 
   let emulator = null;
   let emulatorReadyPromise = null;
@@ -77,12 +73,9 @@
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
-  let activeExtraDiskImage = defaultExtraDiskImage;
   let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
-  let diskBrowsePath = "/";
-  let diskSyncTimer = null;
-  let diskSyncInFlight = false;
+  let diskBrowsePath = "/root";
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -219,7 +212,7 @@
       } else if (entry.type === "regular") {
         const downloadLink = document.createElement("a");
         downloadLink.textContent = "Download";
-        downloadLink.href = `/api/upload-disk/file?path=${encodeURIComponent(entry.path || "")}`;
+        downloadLink.href = `/api/vm-root/file?path=${encodeURIComponent(entry.path || "")}`;
         if (typeof entry.name === "string" && entry.name.length > 0) {
           downloadLink.setAttribute("download", entry.name);
         }
@@ -240,7 +233,7 @@
     setDiskFilesMessage(`loading ${targetPath}...`);
 
     try {
-      const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(targetPath)}`, { cache: "no-store" });
+      const response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(targetPath)}`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(await readResponseError(response));
       }
@@ -386,158 +379,7 @@
     return `http ${response.status}`;
   }
 
-  function toArrayBuffer(value) {
-    if (!value) {
-      return null;
-    }
-    if (value instanceof ArrayBuffer) {
-      return value;
-    }
-    if (ArrayBuffer.isView(value)) {
-      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-    }
-    return null;
-  }
-
-  function resolveExtraDiskProvider() {
-    const ide = emulator?.v86?.cpu?.devices?.ide;
-    const candidates = [
-      ide?.primary?.slave,
-      ide?.devices?.[1],
-      ide?.drives?.[1],
-      ide?.secondary?.master
-    ];
-    for (const drive of candidates) {
-      const provider = drive?.buffer;
-      if (provider && typeof provider.get_buffer === "function") {
-        return provider;
-      }
-    }
-    return null;
-  }
-
-  async function readExtraDiskBuffer() {
-    const provider = resolveExtraDiskProvider();
-    if (!provider) {
-      throw new Error("extra disk provider unavailable (start VM first)");
-    }
-    return new Promise((resolve, reject) => {
-      let done = false;
-      const timeoutId = window.setTimeout(() => {
-        if (done) {
-          return;
-        }
-        done = true;
-        reject(new Error("timed out reading extra disk buffer"));
-      }, 10000);
-      const settle = (cb) => (value) => {
-        if (done) {
-          return;
-        }
-        done = true;
-        window.clearTimeout(timeoutId);
-        cb(value);
-      };
-      try {
-        provider.get_buffer(settle((raw) => {
-          const buffer = toArrayBuffer(raw);
-          if (!buffer || buffer.byteLength <= 0) {
-            reject(new Error("extra disk buffer unavailable (set asyncExtraDisk=false)"));
-            return;
-          }
-          resolve(buffer);
-        }));
-      } catch (err) {
-        settle(reject)(err);
-      }
-    });
-  }
-
-  function autoSyncIntervalMs() {
-    const raw = Number.parseInt(autoSyncSecondsEl?.value || "15", 10);
-    const seconds = Number.isFinite(raw) ? Math.max(3, raw) : 15;
-    if (autoSyncSecondsEl) {
-      autoSyncSecondsEl.value = String(seconds);
-    }
-    return seconds * 1000;
-  }
-
-  function stopAutoDiskSync() {
-    if (!diskSyncTimer) {
-      return;
-    }
-    window.clearInterval(diskSyncTimer);
-    diskSyncTimer = null;
-  }
-
-  function refreshAutoDiskSyncTimer() {
-    stopAutoDiskSync();
-    if (!autoSyncExtraDiskEl || !autoSyncExtraDiskEl.checked) {
-      return;
-    }
-    diskSyncTimer = window.setInterval(() => {
-      void syncExtraDiskToServer("auto");
-    }, autoSyncIntervalMs());
-  }
-
-  async function syncExtraDiskToServer(source = "manual") {
-    if (!diskApiAvailable) {
-      if (source !== "auto") {
-        setDiskStatus("sync unavailable (disk api unavailable)");
-      }
-      return;
-    }
-    if (!emulator) {
-      if (source !== "auto") {
-        setDiskStatus("sync unavailable (start VM first)");
-      }
-      return;
-    }
-    if (diskSyncInFlight) {
-      return;
-    }
-
-    diskSyncInFlight = true;
-    if (syncExtraDiskBtn) {
-      syncExtraDiskBtn.disabled = true;
-    }
-    try {
-      if (source !== "auto") {
-        setDiskStatus("syncing extra disk to server...");
-      }
-      const buffer = await readExtraDiskBuffer();
-      const response = await fetch("/api/upload-disk", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Filename": "vm-extra-disk.img"
-        },
-        body: buffer
-      });
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      const payload = await response.json();
-      applyDiskState(payload);
-      diskBrowsePath = "/";
-      await loadDiskEntries(diskBrowsePath);
-      setDiskStatus(`exchange: synced (${formatBytes(buffer.byteLength)})`);
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      if (source !== "auto") {
-        setDiskStatus(`sync failed (${msg})`);
-      } else {
-        console.warn("auto disk sync failed:", msg);
-      }
-    } finally {
-      diskSyncInFlight = false;
-      if (syncExtraDiskBtn && diskApiAvailable) {
-        syncExtraDiskBtn.disabled = false;
-      }
-    }
-  }
-
-  async function injectFileIntoExtraDisk() {
+  async function importServerFileIntoVmRoot() {
     if (!diskApiAvailable) {
       setDiskStatus("inject unavailable (disk api unavailable)");
       return;
@@ -553,39 +395,24 @@
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
     }
-    setDiskStatus(`importing ${src} -> ${targetPath}...`);
+    setDiskStatus(`importing ${src} -> ${targetPath} in vm rootfs...`);
     try {
-      const importFile = () => fetch(
-        `/api/upload-disk/import?src=${encodeURIComponent(src)}&path=${encodeURIComponent(targetPath)}`,
+      const response = await fetch(
+        `/api/vm-root/import?src=${encodeURIComponent(src)}&path=${encodeURIComponent(targetPath)}`,
         { method: "POST" }
       );
-
-      let response = await importFile();
       if (!response.ok) {
-        const firstError = await readResponseError(response);
-        const missingUploadedImage = response.status === 404 && /no uploaded disk image/i.test(firstError);
-        if (!missingUploadedImage) {
-          throw new Error(firstError);
-        }
-        if (!emulator) {
-          throw new Error("exchange disk is not initialized; start VM and run Sync /root to Server once");
-        }
-        await syncExtraDiskToServer("manual");
-        response = await importFile();
-        if (!response.ok) {
-          throw new Error(await readResponseError(response));
-        }
+        throw new Error(await readResponseError(response));
       }
       const payload = await response.json();
-      setDiskStatus(`injected ${payload.path} (${formatBytes(payload.size)})`);
-      await refreshDiskStateFromServer();
-      diskBrowsePath = "/";
-      await loadDiskEntries(diskBrowsePath);
+      setDiskStatus(`imported ${payload.path} (${formatBytes(payload.size)})`);
+      const importedPath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : targetPath;
+      await loadDiskEntries(parentDiskPath(importedPath));
       if (emulator) {
         await resetVmInstance();
-        setStatus("idle (file injected; click Start to boot with updated extra disk)");
+        setStatus("idle (file imported; click Start to boot with updated rootfs)");
       } else {
-        setStatus("idle (file injected into extra disk)");
+        setStatus("idle (file imported into vm rootfs)");
       }
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
@@ -598,18 +425,8 @@
     }
   }
 
-  function diskLabelFromUrl(url) {
-    if (typeof url !== "string" || url.length === 0) {
-      return "default";
-    }
-    const q = url.indexOf("?");
-    const clean = q >= 0 ? url.slice(0, q) : url;
-    return basename(clean);
-  }
-
   function disableDiskUploadUi(reason) {
     diskApiAvailable = false;
-    stopAutoDiskSync();
     if (diskFilesUpBtn) {
       diskFilesUpBtn.disabled = true;
     }
@@ -622,44 +439,12 @@
     if (injectDiskPathEl) {
       injectDiskPathEl.disabled = true;
     }
-    if (injectServerSrcEl) {
-      injectServerSrcEl.disabled = true;
-    }
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
     }
-    if (syncExtraDiskBtn) {
-      syncExtraDiskBtn.disabled = true;
-    }
-    if (autoSyncExtraDiskEl) {
-      autoSyncExtraDiskEl.checked = false;
-      autoSyncExtraDiskEl.disabled = true;
-    }
-    if (autoSyncSecondsEl) {
-      autoSyncSecondsEl.disabled = true;
-    }
     setDiskFilesVisible(false);
     clearDiskFilesList();
-    setDiskStatus(`exchange api unavailable (${reason})`);
-  }
-
-  function applyDiskState(payload) {
-    const data = payload && typeof payload === "object" ? payload : {};
-    if (data.uploaded === true && typeof data.url === "string" && data.url.length > 0) {
-      activeExtraDiskImage = data.url;
-      const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
-      const name = data.name || diskLabelFromUrl(data.url);
-      setDiskStatus(`exchange: custom (${name}${sizeInfo})`);
-      setDiskFilesVisible(true);
-      return;
-    }
-    activeExtraDiskImage = defaultExtraDiskImage;
-    diskBrowsePath = "/";
-    setDiskFilesPath("/");
-    setDiskFilesMessage("run Sync /root to Server once to initialize exchange disk browsing");
-    clearDiskFilesList();
-    setDiskFilesVisible(false);
-    setDiskStatus(`exchange: default (${diskLabelFromUrl(defaultExtraDiskImage)})`);
+    setDiskStatus(`rootfs api unavailable (${reason})`);
   }
 
   async function resetVmInstance() {
@@ -695,22 +480,27 @@
       return;
     }
     if (!diskApiAvailable) {
-      applyDiskState({ uploaded: false });
+      setDiskStatus("rootfs api unavailable");
       return;
     }
     try {
-      const response = await fetch("/api/upload-disk", { cache: "no-store" });
+      let response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(diskBrowsePath)}`, { cache: "no-store" });
+      if (!response.ok && response.status === 404 && diskBrowsePath !== "/") {
+        diskBrowsePath = "/";
+        response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(diskBrowsePath)}`, { cache: "no-store" });
+      }
       if (!response.ok) {
         throw new Error(await readResponseError(response));
       }
       const payload = await response.json();
-      applyDiskState(payload);
-      if (payload && payload.uploaded === true) {
-        await loadDiskEntries(diskBrowsePath);
-      }
+      const initialPath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : diskBrowsePath;
+      diskBrowsePath = initialPath;
+      setDiskFilesPath(initialPath);
+      renderDiskEntries(initialPath, payload.entries);
+      setDiskFilesVisible(true);
+      setDiskStatus("vm rootfs import api ready");
     } catch (err) {
       disableDiskUploadUi(err && err.message ? err.message : "request failed");
-      applyDiskState({ uploaded: false });
     }
   }
 
@@ -982,7 +772,6 @@
       : ((config.enableEthernet === true || networkRelayUrl.length > 0) ? "ne2k" : "none");
     const defaultAsync = config.asyncDisk === true;
     const bootDiskAsync = typeof config.asyncBootDisk === "boolean" ? config.asyncBootDisk : defaultAsync;
-    const extraDiskAsync = typeof config.asyncExtraDisk === "boolean" ? config.asyncExtraDisk : defaultAsync;
 
     const vmOptions = {
       wasm_path: config.wasmPath || "assets/v86/v86.wasm",
@@ -1004,9 +793,6 @@
       boot_order: 0x132,
       autostart: false
     };
-    if (activeExtraDiskImage && activeExtraDiskImage.length > 0) {
-      vmOptions.hdb = { url: activeExtraDiskImage, async: extraDiskAsync };
-    }
     if (netDeviceType === "none") {
       vmOptions.disable_ne2k = true;
     }
@@ -1154,7 +940,7 @@
 
   if (injectDiskFileBtn) {
     injectDiskFileBtn.addEventListener("click", () => {
-      void injectFileIntoExtraDisk();
+      void importServerFileIntoVmRoot();
     });
   }
   if (injectServerSrcEl) {
@@ -1170,29 +956,6 @@
       if (current.length === 0) {
         const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
         injectDiskPathEl.value = `/${sourceName}`;
-      }
-    });
-  }
-  if (syncExtraDiskBtn) {
-    syncExtraDiskBtn.addEventListener("click", () => {
-      void syncExtraDiskToServer("manual");
-    });
-  }
-  if (autoSyncExtraDiskEl) {
-    autoSyncExtraDiskEl.addEventListener("change", () => {
-      refreshAutoDiskSyncTimer();
-      if (autoSyncExtraDiskEl.checked) {
-        setDiskStatus(`auto-sync enabled (${autoSyncIntervalMs() / 1000}s)`);
-      } else {
-        setDiskStatus("auto-sync disabled");
-      }
-    });
-  }
-  if (autoSyncSecondsEl) {
-    autoSyncSecondsEl.addEventListener("change", () => {
-      if (autoSyncExtraDiskEl?.checked) {
-        refreshAutoDiskSyncTimer();
-        setDiskStatus(`auto-sync interval ${autoSyncIntervalMs() / 1000}s`);
       }
     });
   }

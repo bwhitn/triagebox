@@ -55,6 +55,7 @@ DISK_BROWSE_MAX_ENTRIES = env_int("DISK_BROWSE_MAX_ENTRIES", 4096)
 DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024)
 DISK_FILE_UPLOAD_MAX_BYTES = env_int("DISK_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024)
 DISK_IMPORT_ROOT = os.environ.get("DISK_IMPORT_ROOT", ".").strip() or "."
+VM_ROOT_DISK = os.environ.get("VM_ROOT_DISK", "assets/buildroot-linux.img").strip() or "assets/buildroot-linux.img"
 DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
 DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
@@ -76,6 +77,13 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
 
     def _import_root_dir(self) -> str:
         return os.path.normpath(os.path.join(self.directory, DISK_IMPORT_ROOT))
+
+    def _vm_root_disk_path(self) -> str:
+        base_dir = os.path.realpath(self.directory)
+        candidate = os.path.realpath(os.path.join(base_dir, VM_ROOT_DISK))
+        if not (candidate == base_dir or candidate.startswith(base_dir + os.sep)):
+            raise RuntimeError("vm root disk path escapes server root")
+        return candidate
 
     def _sanitize_filename(self, value: str) -> str:
         if not value:
@@ -409,10 +417,16 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             ),
         )
 
-    def _handle_get_disk_files(self, send_body: bool = True) -> None:
-        disk_path = self._uploaded_disk_path()
+    def _handle_get_disk_files(
+        self,
+        send_body: bool = True,
+        *,
+        disk_path: str | None = None,
+        missing_error: str = "no uploaded disk image",
+    ) -> None:
+        disk_path = disk_path or self._uploaded_disk_path()
         if not os.path.isfile(disk_path):
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"}, send_body=send_body)
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": missing_error}, send_body=send_body)
             return
         if not DEBUGFS_BIN:
             self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"}, send_body=send_body)
@@ -429,19 +443,19 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         try:
             entries = self._debugfs_list_dir(disk_path, normalized_path)
         except FileNotFoundError:
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"}, send_body=send_body)
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in disk image"}, send_body=send_body)
             return
         except NotADirectoryError:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": "path is not a directory in uploaded disk"},
+                {"error": "path is not a directory in disk image"},
                 send_body=send_body,
             )
             return
         except RuntimeError as exc:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": f"failed to inspect uploaded disk: {exc}"},
+                {"error": f"failed to inspect disk image: {exc}"},
                 send_body=send_body,
             )
             return
@@ -457,10 +471,16 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             send_body=send_body,
         )
 
-    def _handle_download_disk_file(self, send_body: bool = True) -> None:
-        disk_path = self._uploaded_disk_path()
+    def _handle_download_disk_file(
+        self,
+        send_body: bool = True,
+        *,
+        disk_path: str | None = None,
+        missing_error: str = "no uploaded disk image",
+    ) -> None:
+        disk_path = disk_path or self._uploaded_disk_path()
         if not os.path.isfile(disk_path):
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"}, send_body=send_body)
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": missing_error}, send_body=send_body)
             return
         if not DEBUGFS_BIN:
             self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"}, send_body=send_body)
@@ -477,12 +497,12 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         try:
             stat_info = self._debugfs_stat(disk_path, normalized_path)
         except FileNotFoundError:
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"}, send_body=send_body)
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in disk image"}, send_body=send_body)
             return
         except RuntimeError as exc:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": f"failed to inspect uploaded disk: {exc}"},
+                {"error": f"failed to inspect disk image: {exc}"},
                 send_body=send_body,
             )
             return
@@ -536,7 +556,7 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             with open(tmp_path, "rb") as extracted_file:
                 shutil.copyfileobj(extracted_file, self.wfile, length=64 * 1024)
         except FileNotFoundError:
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"})
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in disk image"})
         except RuntimeError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to extract file: {exc}"})
         finally:
@@ -568,6 +588,19 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
                 normalized_path = "/" + requested_name
         else:
             normalized_path = "/" + requested_name
+
+        parent_path = posixpath.dirname(normalized_path.rstrip("/")) or "/"
+        try:
+            parent_stat = self._debugfs_stat(disk_path, parent_path)
+        except FileNotFoundError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "destination directory not found in uploaded disk"})
+            return
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to inspect destination path: {exc}"})
+            return
+        if parent_stat.get("type", "").lower() != "directory":
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "destination parent is not a directory in uploaded disk"})
+            return
 
         transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
         is_chunked = "chunked" in transfer_encoding
@@ -684,10 +717,15 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             except OSError:
                 pass
 
-    def _handle_import_disk_file(self) -> None:
-        disk_path = self._uploaded_disk_path()
+    def _handle_import_disk_file(
+        self,
+        *,
+        disk_path: str | None = None,
+        missing_error: str = "no uploaded disk image",
+    ) -> None:
+        disk_path = disk_path or self._uploaded_disk_path()
         if not os.path.isfile(disk_path):
-            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"})
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": missing_error})
             return
         if not DEBUGFS_BIN:
             self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"})
@@ -726,6 +764,19 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         else:
             dest_path = "/" + os.path.basename(src_path)
 
+        dest_parent = posixpath.dirname(dest_path.rstrip("/")) or "/"
+        try:
+            parent_stat = self._debugfs_stat(disk_path, dest_parent)
+        except FileNotFoundError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "destination directory not found in disk"})
+            return
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to inspect destination path: {exc}"})
+            return
+        if parent_stat.get("type", "").lower() != "directory":
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "destination parent is not a directory in disk"})
+            return
+
         try:
             # Replace existing file if it already exists.
             try:
@@ -749,6 +800,41 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
                 "path": dest_path,
                 "size": file_size,
             },
+        )
+
+    def _handle_get_vm_root_files(self, send_body: bool = True) -> None:
+        try:
+            disk_path = self._vm_root_disk_path()
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)}, send_body=send_body)
+            return
+        self._handle_get_disk_files(
+            send_body=send_body,
+            disk_path=disk_path,
+            missing_error=f"vm root disk not found: {VM_ROOT_DISK}",
+        )
+
+    def _handle_download_vm_root_file(self, send_body: bool = True) -> None:
+        try:
+            disk_path = self._vm_root_disk_path()
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)}, send_body=send_body)
+            return
+        self._handle_download_disk_file(
+            send_body=send_body,
+            disk_path=disk_path,
+            missing_error=f"vm root disk not found: {VM_ROOT_DISK}",
+        )
+
+    def _handle_import_vm_root_file(self) -> None:
+        try:
+            disk_path = self._vm_root_disk_path()
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        self._handle_import_disk_file(
+            disk_path=disk_path,
+            missing_error=f"vm root disk not found: {VM_ROOT_DISK}",
         )
 
     def _parse_range(self, range_header: str, file_size: int) -> tuple[int, int] | None:
@@ -912,6 +998,12 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._send_plain_file(path, send_body=send_body)
 
     def do_GET(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/vm-root/files":
+            self._handle_get_vm_root_files(send_body=True)
+            return
+        if self._request_path() == "/api/vm-root/file":
+            self._handle_download_vm_root_file(send_body=True)
+            return
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=True)
             return
@@ -924,6 +1016,12 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._serve(send_body=True)
 
     def do_HEAD(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/vm-root/files":
+            self._handle_get_vm_root_files(send_body=False)
+            return
+        if self._request_path() == "/api/vm-root/file":
+            self._handle_download_vm_root_file(send_body=False)
+            return
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=False)
             return
@@ -936,6 +1034,9 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._serve(send_body=False)
 
     def do_POST(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/vm-root/import":
+            self._handle_import_vm_root_file()
+            return
         if self._request_path() == "/api/upload-disk":
             self._handle_post_disk()
             return
