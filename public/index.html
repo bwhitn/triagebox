@@ -39,6 +39,19 @@
           <button id="mount-extra-disk" type="button">Mount Extra Disk (/root)</button>
           <button id="unmount-extra-disk" type="button">Unmount /root</button>
         </div>
+        <div class="controls">
+          <input id="inject-disk-file" type="file">
+          <input id="inject-disk-path" type="text" placeholder="/from-server.bin">
+          <button id="inject-disk-file-btn" type="button">Inject File to Extra Disk</button>
+        </div>
+        <div class="controls">
+          <button id="sync-extra-disk" type="button">Sync /root to Server</button>
+          <label for="auto-sync-extra-disk">
+            <input id="auto-sync-extra-disk" type="checkbox">
+            Auto Sync
+          </label>
+          <input id="auto-sync-seconds" type="number" min="3" value="15" title="Auto sync interval (seconds)">
+        </div>
         <p id="disk-status">disk: extra default</p>
         <p><a id="download-uploaded-disk" href="#" hidden>Download Uploaded Disk Image</a></p>
         <div id="disk-download-prompt" class="disk-files-browser" hidden>

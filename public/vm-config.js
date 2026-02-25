@@ -29,5 +29,10 @@ window.V86_VM_CONFIG = {
   // Optional VGA knobs when enableVga=true.
   // vgaMemoryMb: 8,
   // vgaBios: "assets/v86/vgabios.bin",
-  asyncDisk: true
+  // Global async default (overridden per-disk below when set).
+  asyncDisk: true,
+  // Keep boot disk async for faster startup.
+  asyncBootDisk: true,
+  // Keep extra disk non-async so browser can export/sync it back to server.
+  asyncExtraDisk: false
 };

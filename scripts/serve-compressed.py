@@ -53,6 +53,7 @@ DISK_UPLOAD_SUBDIR = os.environ.get("DISK_UPLOAD_SUBDIR", "uploads").strip("/") 
 DISK_UPLOAD_FILENAME = os.environ.get("DISK_UPLOAD_FILENAME", "custom-disk.img").strip() or "custom-disk.img"
 DISK_BROWSE_MAX_ENTRIES = env_int("DISK_BROWSE_MAX_ENTRIES", 4096)
 DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024)
+DISK_FILE_UPLOAD_MAX_BYTES = env_int("DISK_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024)
 DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
 DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
@@ -117,10 +118,21 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             if line.startswith("debugfs "):
                 continue
             cleaned_lines.append(line)
+        cleaned_text = "\n".join(cleaned_lines).strip()
+        lower_text = cleaned_text.lower()
+        fatal_markers = (
+            "filesystem not open",
+            "attempt to read block",
+            "bad magic number",
+            "while trying to open",
+            "couldn't find valid filesystem superblock",
+            "short read while trying to open",
+        )
+        if any(marker in lower_text for marker in fatal_markers):
+            raise RuntimeError(cleaned_text or "debugfs failed to open filesystem")
         if proc.returncode != 0:
-            text = "\n".join(cleaned_lines).strip()
-            raise RuntimeError(text or f"debugfs exited with code {proc.returncode}")
-        return "\n".join(cleaned_lines).strip()
+            raise RuntimeError(cleaned_text or f"debugfs exited with code {proc.returncode}")
+        return cleaned_text
 
     def _debugfs_type_from_mode(self, mode_raw: str) -> str:
         try:
@@ -346,6 +358,21 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to store uploaded disk: {exc}"})
             return
 
+        if DEBUGFS_BIN:
+            try:
+                # Validate that the uploaded image is a readable ext filesystem image.
+                self._run_debugfs(target_path, "stat /")
+            except RuntimeError as exc:
+                try:
+                    os.remove(target_path)
+                except OSError:
+                    pass
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": f"uploaded disk is not a supported ext filesystem image: {exc}"},
+                )
+                return
+
         st = os.stat(target_path)
         requested_name = self._sanitize_filename(self.headers.get("X-Filename", ""))
         self._send_json(
@@ -488,6 +515,143 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"})
         except RuntimeError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to extract file: {exc}"})
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+
+    def _handle_put_disk_file(self) -> None:
+        disk_path = self._uploaded_disk_path()
+        if not os.path.isfile(disk_path):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"})
+            return
+        if not DEBUGFS_BIN:
+            self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"})
+            return
+
+        query = self._request_query()
+        requested_name = self._sanitize_filename(self.headers.get("X-Filename", ""))
+        requested_path = query.get("path", [""])[0]
+        if requested_path.strip():
+            try:
+                normalized_path = self._normalize_disk_path(requested_path)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid path"})
+                return
+            if normalized_path == "/":
+                normalized_path = "/" + requested_name
+        else:
+            normalized_path = "/" + requested_name
+
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        is_chunked = "chunked" in transfer_encoding
+        content_length = None
+        if is_chunked:
+            max_upload_bytes = DISK_FILE_UPLOAD_MAX_BYTES if DISK_FILE_UPLOAD_MAX_BYTES > 0 else None
+        else:
+            content_length_raw = self.headers.get("Content-Length", "").strip()
+            if not content_length_raw:
+                self._send_json(
+                    HTTPStatus.LENGTH_REQUIRED,
+                    {"error": "Content-Length header is required (or use chunked transfer encoding)"},
+                )
+                return
+            try:
+                content_length = int(content_length_raw, 10)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
+                return
+            if content_length <= 0:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body must be non-empty"})
+                return
+            if DISK_FILE_UPLOAD_MAX_BYTES > 0 and content_length > DISK_FILE_UPLOAD_MAX_BYTES:
+                self._send_json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    {"error": f"file upload exceeds max size ({DISK_FILE_UPLOAD_MAX_BYTES} bytes)"},
+                )
+                return
+            max_upload_bytes = content_length
+
+        os.makedirs(self._uploads_dir(), exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".disk-import-", suffix=".bin", dir=self._uploads_dir())
+        written_bytes = 0
+        try:
+            with os.fdopen(fd, "wb") as tmp_out:
+                if is_chunked:
+                    while True:
+                        chunk_size_line = self.rfile.readline(64 * 1024)
+                        if not chunk_size_line:
+                            raise OSError("chunked request ended unexpectedly")
+                        chunk_size_raw = chunk_size_line.strip().split(b";", 1)[0]
+                        try:
+                            chunk_size = int(chunk_size_raw, 16)
+                        except ValueError as exc:
+                            raise OSError("invalid chunk size in request body") from exc
+                        if chunk_size < 0:
+                            raise OSError("invalid negative chunk size in request body")
+                        if chunk_size == 0:
+                            while True:
+                                trailer = self.rfile.readline(64 * 1024)
+                                if trailer in (b"\r\n", b"\n", b""):
+                                    break
+                            break
+
+                        if max_upload_bytes is not None and (written_bytes + chunk_size) > max_upload_bytes:
+                            raise ValueError(f"file upload exceeds max size ({DISK_FILE_UPLOAD_MAX_BYTES} bytes)")
+
+                        remaining = chunk_size
+                        while remaining > 0:
+                            chunk = self.rfile.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise OSError("request body ended unexpectedly")
+                            tmp_out.write(chunk)
+                            remaining -= len(chunk)
+                            written_bytes += len(chunk)
+
+                        trailing = self.rfile.read(2)
+                        if trailing not in (b"\r\n", b"\n"):
+                            raise OSError("malformed chunk delimiter in request body")
+                else:
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise OSError("request body ended unexpectedly")
+                        tmp_out.write(chunk)
+                        remaining -= len(chunk)
+                        written_bytes += len(chunk)
+
+                if written_bytes <= 0:
+                    raise OSError("request body must be non-empty")
+
+            # Replace file if already present (ignore errors if it does not exist).
+            try:
+                self._run_debugfs(disk_path, f"rm {self._debugfs_quote(normalized_path)}")
+            except RuntimeError:
+                pass
+
+            self._run_debugfs(
+                disk_path,
+                f"write {self._debugfs_quote(tmp_path)} {self._debugfs_quote(normalized_path)}",
+            )
+
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "uploaded": True,
+                    "path": normalized_path,
+                    "name": requested_name,
+                    "size": written_bytes,
+                },
+            )
+        except ValueError as exc:
+            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": str(exc)})
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to write file into disk: {exc}"})
+        except OSError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to read upload body: {exc}"})
         finally:
             try:
                 if os.path.exists(tmp_path):
@@ -682,6 +846,12 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self._request_path() == "/api/upload-disk":
             self._handle_post_disk()
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "endpoint not found")
+
+    def do_PUT(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/upload-disk/file":
+            self._handle_put_disk_file()
             return
         self.send_error(HTTPStatus.NOT_FOUND, "endpoint not found")
 

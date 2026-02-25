@@ -195,6 +195,12 @@ Guest init attempts to auto-mount the secondary disk on `/root`.
 Uploaded files are stored at `public/uploads/custom-disk.img`.
 When a custom ext disk is uploaded, the UI can browse entries via `GET /api/upload-disk/files?path=/...`
 and download selected files via `GET /api/upload-disk/file?path=/...`.
+The UI also includes an exchange workflow:
+- `Inject File to Extra Disk` writes a single file into the server-side extra disk via `PUT /api/upload-disk/file?path=/...`
+- `Sync /root to Server` exports the current VM extra disk buffer back to `public/uploads/custom-disk.img`
+- Optional `Auto Sync` repeats the export on an interval
+When injecting a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
+loads the updated extra disk image.
 
 ### Docker server (Debian trixie-slim)
 

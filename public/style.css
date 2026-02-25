@@ -59,6 +59,19 @@ h2 {
   max-width: 100%;
 }
 
+#inject-disk-file {
+  max-width: 100%;
+}
+
+#inject-disk-path {
+  min-width: 220px;
+  max-width: 100%;
+}
+
+#auto-sync-seconds {
+  width: 90px;
+}
+
 #disk-status {
   margin: 0.55rem 0 0;
   color: #4a5568;

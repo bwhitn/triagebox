@@ -51,6 +51,12 @@
   const clearCustomDiskBtn = document.getElementById("clear-custom-disk");
   const mountExtraDiskBtn = document.getElementById("mount-extra-disk");
   const unmountExtraDiskBtn = document.getElementById("unmount-extra-disk");
+  const injectDiskFileEl = document.getElementById("inject-disk-file");
+  const injectDiskPathEl = document.getElementById("inject-disk-path");
+  const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
+  const syncExtraDiskBtn = document.getElementById("sync-extra-disk");
+  const autoSyncExtraDiskEl = document.getElementById("auto-sync-extra-disk");
+  const autoSyncSecondsEl = document.getElementById("auto-sync-seconds");
   const diskStatusEl = document.getElementById("disk-status");
   const downloadUploadedDiskEl = document.getElementById("download-uploaded-disk");
   const diskDownloadPromptEl = document.getElementById("disk-download-prompt");
@@ -87,6 +93,8 @@
   let diskStateReady = Promise.resolve();
   let diskBrowsePath = "/";
   let diskPromptFiles = [];
+  let diskSyncTimer = null;
+  let diskSyncInFlight = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -550,6 +558,207 @@
     return `http ${response.status}`;
   }
 
+  function toArrayBuffer(value) {
+    if (!value) {
+      return null;
+    }
+    if (value instanceof ArrayBuffer) {
+      return value;
+    }
+    if (ArrayBuffer.isView(value)) {
+      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+    }
+    return null;
+  }
+
+  function resolveExtraDiskProvider() {
+    const ide = emulator?.v86?.cpu?.devices?.ide;
+    const candidates = [
+      ide?.primary?.slave,
+      ide?.devices?.[1],
+      ide?.drives?.[1],
+      ide?.secondary?.master
+    ];
+    for (const drive of candidates) {
+      const provider = drive?.buffer;
+      if (provider && typeof provider.get_buffer === "function") {
+        return provider;
+      }
+    }
+    return null;
+  }
+
+  async function readExtraDiskBuffer() {
+    const provider = resolveExtraDiskProvider();
+    if (!provider) {
+      throw new Error("extra disk provider unavailable (start VM first)");
+    }
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const timeoutId = window.setTimeout(() => {
+        if (done) {
+          return;
+        }
+        done = true;
+        reject(new Error("timed out reading extra disk buffer"));
+      }, 10000);
+      const settle = (cb) => (value) => {
+        if (done) {
+          return;
+        }
+        done = true;
+        window.clearTimeout(timeoutId);
+        cb(value);
+      };
+      try {
+        provider.get_buffer(settle((raw) => {
+          const buffer = toArrayBuffer(raw);
+          if (!buffer || buffer.byteLength <= 0) {
+            reject(new Error("extra disk buffer unavailable (set asyncExtraDisk=false)"));
+            return;
+          }
+          resolve(buffer);
+        }));
+      } catch (err) {
+        settle(reject)(err);
+      }
+    });
+  }
+
+  function autoSyncIntervalMs() {
+    const raw = Number.parseInt(autoSyncSecondsEl?.value || "15", 10);
+    const seconds = Number.isFinite(raw) ? Math.max(3, raw) : 15;
+    if (autoSyncSecondsEl) {
+      autoSyncSecondsEl.value = String(seconds);
+    }
+    return seconds * 1000;
+  }
+
+  function stopAutoDiskSync() {
+    if (!diskSyncTimer) {
+      return;
+    }
+    window.clearInterval(diskSyncTimer);
+    diskSyncTimer = null;
+  }
+
+  function refreshAutoDiskSyncTimer() {
+    stopAutoDiskSync();
+    if (!autoSyncExtraDiskEl || !autoSyncExtraDiskEl.checked) {
+      return;
+    }
+    diskSyncTimer = window.setInterval(() => {
+      void syncExtraDiskToServer("auto");
+    }, autoSyncIntervalMs());
+  }
+
+  async function syncExtraDiskToServer(source = "manual") {
+    if (!diskApiAvailable) {
+      if (source !== "auto") {
+        setDiskStatus("sync unavailable (disk api unavailable)");
+      }
+      return;
+    }
+    if (!emulator) {
+      if (source !== "auto") {
+        setDiskStatus("sync unavailable (start VM first)");
+      }
+      return;
+    }
+    if (diskSyncInFlight) {
+      return;
+    }
+
+    diskSyncInFlight = true;
+    if (syncExtraDiskBtn) {
+      syncExtraDiskBtn.disabled = true;
+    }
+    try {
+      if (source !== "auto") {
+        setDiskStatus("syncing extra disk to server...");
+      }
+      const buffer = await readExtraDiskBuffer();
+      const response = await fetch("/api/upload-disk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-Filename": "vm-extra-disk.img"
+        },
+        body: buffer
+      });
+      if (!response.ok) {
+        throw new Error(await readResponseError(response));
+      }
+      const payload = await response.json();
+      applyDiskState(payload);
+      diskBrowsePath = "/";
+      await loadDiskEntries(diskBrowsePath);
+      setDiskStatus(`extra: synced (${formatBytes(buffer.byteLength)})`);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      if (source !== "auto") {
+        setDiskStatus(`sync failed (${msg})`);
+      } else {
+        console.warn("auto disk sync failed:", msg);
+      }
+    } finally {
+      diskSyncInFlight = false;
+      if (syncExtraDiskBtn && diskApiAvailable) {
+        syncExtraDiskBtn.disabled = false;
+      }
+    }
+  }
+
+  async function injectFileIntoExtraDisk() {
+    if (!diskApiAvailable) {
+      setDiskStatus("inject unavailable (disk api unavailable)");
+      return;
+    }
+    const file = injectDiskFileEl?.files?.[0];
+    if (!file) {
+      setDiskStatus("choose a file to inject");
+      return;
+    }
+    const requestedPath = (injectDiskPathEl?.value || "").trim();
+    const targetPath = requestedPath.length > 0 ? requestedPath : `/${file.name}`;
+    if (injectDiskFileBtn) {
+      injectDiskFileBtn.disabled = true;
+    }
+    setDiskStatus(`injecting ${file.name} -> ${targetPath}...`);
+    try {
+      const response = await fetch(`/api/upload-disk/file?path=${encodeURIComponent(targetPath)}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-Filename": file.name
+        },
+        body: file
+      });
+      if (!response.ok) {
+        throw new Error(await readResponseError(response));
+      }
+      const payload = await response.json();
+      setDiskStatus(`injected ${payload.path} (${formatBytes(payload.size)})`);
+      await refreshDiskStateFromServer();
+      diskBrowsePath = "/";
+      await loadDiskEntries(diskBrowsePath);
+      if (emulator) {
+        await resetVmInstance();
+        setStatus("idle (file injected; click Start to boot with updated extra disk)");
+      } else {
+        setStatus("idle (file injected into extra disk)");
+      }
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskStatus(`inject failed (${msg})`);
+      console.error(err);
+    } finally {
+      if (injectDiskFileBtn && diskApiAvailable) {
+        injectDiskFileBtn.disabled = false;
+      }
+    }
+  }
+
   function diskLabelFromUrl(url) {
     if (typeof url !== "string" || url.length === 0) {
       return "default";
@@ -561,6 +770,7 @@
 
   function disableDiskUploadUi(reason) {
     diskApiAvailable = false;
+    stopAutoDiskSync();
     if (uploadDiskBtn) {
       uploadDiskBtn.disabled = true;
     }
@@ -575,6 +785,31 @@
     }
     if (diskFilesRefreshBtn) {
       diskFilesRefreshBtn.disabled = true;
+    }
+    if (mountExtraDiskBtn) {
+      mountExtraDiskBtn.disabled = true;
+    }
+    if (unmountExtraDiskBtn) {
+      unmountExtraDiskBtn.disabled = true;
+    }
+    if (injectDiskFileEl) {
+      injectDiskFileEl.disabled = true;
+    }
+    if (injectDiskPathEl) {
+      injectDiskPathEl.disabled = true;
+    }
+    if (injectDiskFileBtn) {
+      injectDiskFileBtn.disabled = true;
+    }
+    if (syncExtraDiskBtn) {
+      syncExtraDiskBtn.disabled = true;
+    }
+    if (autoSyncExtraDiskEl) {
+      autoSyncExtraDiskEl.checked = false;
+      autoSyncExtraDiskEl.disabled = true;
+    }
+    if (autoSyncSecondsEl) {
+      autoSyncSecondsEl.disabled = true;
     }
     if (downloadUploadedDiskEl) {
       downloadUploadedDiskEl.hidden = true;
@@ -985,6 +1220,9 @@
     const netDeviceType = typeof config.netDeviceType === "string" && config.netDeviceType.trim().length > 0
       ? config.netDeviceType.trim().toLowerCase()
       : ((config.enableEthernet === true || networkRelayUrl.length > 0) ? "ne2k" : "none");
+    const defaultAsync = config.asyncDisk === true;
+    const bootDiskAsync = typeof config.asyncBootDisk === "boolean" ? config.asyncBootDisk : defaultAsync;
+    const extraDiskAsync = typeof config.asyncExtraDisk === "boolean" ? config.asyncExtraDisk : defaultAsync;
 
     const vmOptions = {
       wasm_path: config.wasmPath || "assets/v86/v86.wasm",
@@ -992,7 +1230,7 @@
       bios: { url: config.bios || "assets/v86/seabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: defaultBootDiskImage, async: config.asyncDisk === true },
+      hda: { url: defaultBootDiskImage, async: bootDiskAsync },
       cmdline,
       acpi: false,
       net_device: { type: netDeviceType },
@@ -1007,7 +1245,7 @@
       autostart: false
     };
     if (activeExtraDiskImage && activeExtraDiskImage.length > 0) {
-      vmOptions.hdb = { url: activeExtraDiskImage, async: config.asyncDisk === true };
+      vmOptions.hdb = { url: activeExtraDiskImage, async: extraDiskAsync };
     }
     if (netDeviceType === "none") {
       vmOptions.disable_ne2k = true;
@@ -1298,6 +1536,49 @@
   if (unmountExtraDiskBtn) {
     unmountExtraDiskBtn.addEventListener("click", () => {
       unmountExtraDiskFromUi();
+    });
+  }
+  if (injectDiskFileBtn) {
+    injectDiskFileBtn.addEventListener("click", () => {
+      void injectFileIntoExtraDisk();
+    });
+  }
+  if (injectDiskFileEl) {
+    injectDiskFileEl.addEventListener("change", () => {
+      if (!injectDiskPathEl) {
+        return;
+      }
+      const file = injectDiskFileEl.files?.[0];
+      if (!file) {
+        return;
+      }
+      const current = injectDiskPathEl.value.trim();
+      if (current.length === 0) {
+        injectDiskPathEl.value = `/${file.name}`;
+      }
+    });
+  }
+  if (syncExtraDiskBtn) {
+    syncExtraDiskBtn.addEventListener("click", () => {
+      void syncExtraDiskToServer("manual");
+    });
+  }
+  if (autoSyncExtraDiskEl) {
+    autoSyncExtraDiskEl.addEventListener("change", () => {
+      refreshAutoDiskSyncTimer();
+      if (autoSyncExtraDiskEl.checked) {
+        setDiskStatus(`auto-sync enabled (${autoSyncIntervalMs() / 1000}s)`);
+      } else {
+        setDiskStatus("auto-sync disabled");
+      }
+    });
+  }
+  if (autoSyncSecondsEl) {
+    autoSyncSecondsEl.addEventListener("change", () => {
+      if (autoSyncExtraDiskEl?.checked) {
+        refreshAutoDiskSyncTimer();
+        setDiskStatus(`auto-sync interval ${autoSyncIntervalMs() / 1000}s`);
+      }
     });
   }
   if (diskFilesUpBtn) {
