@@ -1,4 +1,9 @@
 (() => {
+  const SERIAL_MIN_COLS = 80;
+  const SERIAL_MAX_COLS = 120;
+  const SERIAL_MIN_ROWS = 24;
+  const SERIAL_MAX_ROWS = 45;
+
   const config = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
   const serialEnabled = config.enableSerial === true;
   const xtermCtor = (() => {
@@ -18,7 +23,13 @@
     // stay anchored at column 0 in xterm.js.
     return class SerialTerminal extends xtermCtor {
       constructor(options = {}) {
-        super(Object.assign({ convertEol: true }, options || {}));
+        super(Object.assign({
+          convertEol: true,
+          // Keep metrics stable across browsers; avoids ultra-wide tiny-cell fits.
+          fontFamily: "Iosevka, JetBrains Mono, SFMono-Regular, monospace",
+          fontSize: 16,
+          lineHeight: 1.1
+        }, options || {}));
       }
     };
   })();
@@ -68,9 +79,6 @@
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
   let serialFitAddon = null;
-  let guestWinsizeSyncTimer = 0;
-  let guestWinsizePending = null;
-  let guestWinsizeApplied = null;
   let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
@@ -339,6 +347,12 @@
     sampleTimer = null;
   }
 
+  function clampSerialSize(cols, rows) {
+    const safeCols = Math.max(SERIAL_MIN_COLS, Math.min(SERIAL_MAX_COLS, cols));
+    const safeRows = Math.max(SERIAL_MIN_ROWS, Math.min(SERIAL_MAX_ROWS, rows));
+    return { cols: safeCols, rows: safeRows };
+  }
+
   function fitSerialTerminal() {
     if (!serialEnabled || !serialUseXterm || !serialXtermEl || !emulator?.serial_adapter?.term) {
       return;
@@ -347,7 +361,10 @@
     const term = emulator.serial_adapter.term;
     if (serialFitAddon && typeof serialFitAddon.fit === "function") {
       serialFitAddon.fit();
-      queueGuestWinsizeSync(term.cols, term.rows);
+      const clamped = clampSerialSize(term.cols || SERIAL_MIN_COLS, term.rows || SERIAL_MIN_ROWS);
+      if (term.cols !== clamped.cols || term.rows !== clamped.rows) {
+        term.resize(clamped.cols, clamped.rows);
+      }
       return;
     }
 
@@ -362,68 +379,16 @@
       return;
     }
 
-    const cols = Math.max(20, Math.floor(viewportWidth / cellWidth));
-    const rows = Math.max(5, Math.floor(viewportHeight / cellHeight));
+    const clamped = clampSerialSize(
+      Math.floor(viewportWidth / cellWidth),
+      Math.floor(viewportHeight / cellHeight)
+    );
+    const cols = clamped.cols;
+    const rows = clamped.rows;
 
     if (term.cols !== cols || term.rows !== rows) {
       term.resize(cols, rows);
     }
-    queueGuestWinsizeSync(term.cols, term.rows);
-  }
-
-  function applyGuestWinsize(cols, rows) {
-    if (
-      !serialEnabled ||
-      !Number.isInteger(cols) ||
-      !Number.isInteger(rows) ||
-      cols <= 0 ||
-      rows <= 0 ||
-      !emulator ||
-      typeof emulator.serial_send_bytes !== "function"
-    ) {
-      return;
-    }
-
-    if (guestWinsizeApplied && guestWinsizeApplied.cols === cols && guestWinsizeApplied.rows === rows) {
-      return;
-    }
-
-    const term = emulator?.serial_adapter?.term;
-    if (
-      term?.buffer?.active &&
-      term?.buffer?.normal &&
-      term.buffer.active !== term.buffer.normal
-    ) {
-      // Skip command injection while full-screen TUIs are active.
-      setTimeout(() => queueGuestWinsizeSync(cols, rows), 400);
-      return;
-    }
-
-    const cmd =
-      `stty rows ${rows} cols ${cols} 2>/dev/null || ` +
-      `/bin/busybox stty rows ${rows} cols ${cols} 2>/dev/null\r`;
-    const bytes = new TextEncoder().encode(cmd);
-    emulator.serial_send_bytes(0, bytes);
-    guestWinsizeApplied = { cols, rows };
-  }
-
-  function queueGuestWinsizeSync(cols, rows) {
-    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0) {
-      return;
-    }
-    guestWinsizePending = { cols, rows };
-
-    if (guestWinsizeSyncTimer) {
-      clearTimeout(guestWinsizeSyncTimer);
-    }
-    guestWinsizeSyncTimer = setTimeout(() => {
-      guestWinsizeSyncTimer = 0;
-      if (!guestWinsizePending) {
-        return;
-      }
-      applyGuestWinsize(guestWinsizePending.cols, guestWinsizePending.rows);
-      guestWinsizePending = null;
-    }, 100);
   }
 
   function scheduleSerialFit() {
@@ -599,7 +564,6 @@
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
       completeDownloadMeter();
-      guestWinsizeApplied = null;
       setupSerialResizeHandling();
       if (serialEnabled && serialUseXterm) {
         const term = emulator?.serial_adapter?.term;
