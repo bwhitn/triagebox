@@ -240,40 +240,103 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._send_json(HTTPStatus.OK, self._disk_payload(False))
 
     def _handle_post_disk(self) -> None:
-        content_length_raw = self.headers.get("Content-Length", "").strip()
-        if not content_length_raw:
-            self._send_json(HTTPStatus.LENGTH_REQUIRED, {"error": "Content-Length header is required"})
-            return
-        try:
-            content_length = int(content_length_raw, 10)
-        except ValueError:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
-            return
-        if content_length <= 0:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body must be non-empty"})
-            return
-        if content_length > DISK_UPLOAD_MAX_BYTES:
-            self._send_json(
-                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                {"error": f"disk upload exceeds max size ({DISK_UPLOAD_MAX_BYTES} bytes)"},
-            )
-            return
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        is_chunked = "chunked" in transfer_encoding
+        content_length = None
+
+        if is_chunked:
+            if DISK_UPLOAD_MAX_BYTES <= 0:
+                max_upload_bytes = None
+            else:
+                max_upload_bytes = DISK_UPLOAD_MAX_BYTES
+        else:
+            content_length_raw = self.headers.get("Content-Length", "").strip()
+            if not content_length_raw:
+                self._send_json(
+                    HTTPStatus.LENGTH_REQUIRED,
+                    {"error": "Content-Length header is required (or use chunked transfer encoding)"},
+                )
+                return
+            try:
+                content_length = int(content_length_raw, 10)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
+                return
+            if content_length <= 0:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body must be non-empty"})
+                return
+            if DISK_UPLOAD_MAX_BYTES > 0 and content_length > DISK_UPLOAD_MAX_BYTES:
+                self._send_json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    {"error": f"disk upload exceeds max size ({DISK_UPLOAD_MAX_BYTES} bytes)"},
+                )
+                return
+            max_upload_bytes = content_length
 
         uploads_dir = self._uploads_dir()
         os.makedirs(uploads_dir, exist_ok=True)
 
         target_path = self._uploaded_disk_path()
         fd, tmp_path = tempfile.mkstemp(prefix=".disk-upload-", suffix=".tmp", dir=uploads_dir)
+        written_bytes = 0
         try:
             with os.fdopen(fd, "wb") as tmp_out:
-                remaining = content_length
-                while remaining > 0:
-                    chunk = self.rfile.read(min(1024 * 1024, remaining))
-                    if not chunk:
-                        raise OSError("request body ended unexpectedly")
-                    tmp_out.write(chunk)
-                    remaining -= len(chunk)
+                if is_chunked:
+                    while True:
+                        chunk_size_line = self.rfile.readline(64 * 1024)
+                        if not chunk_size_line:
+                            raise OSError("chunked request ended unexpectedly")
+                        chunk_size_raw = chunk_size_line.strip().split(b";", 1)[0]
+                        try:
+                            chunk_size = int(chunk_size_raw, 16)
+                        except ValueError as exc:
+                            raise OSError("invalid chunk size in request body") from exc
+                        if chunk_size < 0:
+                            raise OSError("invalid negative chunk size in request body")
+                        if chunk_size == 0:
+                            # consume trailer headers
+                            while True:
+                                trailer = self.rfile.readline(64 * 1024)
+                                if trailer in (b"\r\n", b"\n", b""):
+                                    break
+                            break
+
+                        if max_upload_bytes is not None and (written_bytes + chunk_size) > max_upload_bytes:
+                            raise ValueError(f"disk upload exceeds max size ({DISK_UPLOAD_MAX_BYTES} bytes)")
+
+                        remaining = chunk_size
+                        while remaining > 0:
+                            chunk = self.rfile.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise OSError("request body ended unexpectedly")
+                            tmp_out.write(chunk)
+                            remaining -= len(chunk)
+                            written_bytes += len(chunk)
+
+                        trailing = self.rfile.read(2)
+                        if trailing not in (b"\r\n", b"\n"):
+                            raise OSError("malformed chunk delimiter in request body")
+                else:
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise OSError("request body ended unexpectedly")
+                        tmp_out.write(chunk)
+                        remaining -= len(chunk)
+                        written_bytes += len(chunk)
+
+                if written_bytes <= 0:
+                    raise OSError("request body must be non-empty")
             os.replace(tmp_path, target_path)
+        except ValueError as exc:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": str(exc)})
+            return
         except OSError as exc:
             try:
                 if os.path.exists(tmp_path):

@@ -276,8 +276,7 @@
   async function fetchDiskDirectoryEntries(path) {
     const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(path)}`, { cache: "no-store" });
     if (!response.ok) {
-      const msg = await response.text();
-      throw new Error(msg || `http ${response.status}`);
+      throw new Error(await readResponseError(response));
     }
     return response.json();
   }
@@ -407,8 +406,7 @@
     try {
       const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(targetPath)}`, { cache: "no-store" });
       if (!response.ok) {
-        const msg = await response.text();
-        throw new Error(msg || `http ${response.status}`);
+        throw new Error(await readResponseError(response));
       }
       const payload = await response.json();
       diskBrowsePath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : targetPath;
@@ -528,6 +526,30 @@
     return parts.length > 0 ? parts[parts.length - 1] : path;
   }
 
+  async function readResponseError(response) {
+    if (!response) {
+      return "request failed";
+    }
+    let body = "";
+    try {
+      body = await response.text();
+    } catch (err) {
+      body = "";
+    }
+    if (body) {
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed && typeof parsed.error === "string" && parsed.error.length > 0) {
+          return parsed.error;
+        }
+      } catch (err) {
+        // non-JSON response body; keep raw text
+      }
+      return body;
+    }
+    return `http ${response.status}`;
+  }
+
   function diskLabelFromUrl(url) {
     if (typeof url !== "string" || url.length === 0) {
       return "default";
@@ -631,7 +653,7 @@
     try {
       const response = await fetch("/api/upload-disk", { cache: "no-store" });
       if (!response.ok) {
-        throw new Error(`http ${response.status}`);
+        throw new Error(await readResponseError(response));
       }
       const payload = await response.json();
       applyDiskState(payload);
@@ -1120,8 +1142,7 @@
         body: file
       });
       if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `http ${response.status}`);
+        throw new Error(await readResponseError(response));
       }
       const payload = await response.json();
       applyDiskState(payload);
@@ -1184,8 +1205,7 @@
         method: "DELETE"
       });
       if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `http ${response.status}`);
+        throw new Error(await readResponseError(response));
       }
       applyDiskState({ uploaded: false });
       clearDiskDownloadPrompt();
