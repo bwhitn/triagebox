@@ -20,6 +20,9 @@ BUILDROOT_SRC="${SRC_PARENT}/buildroot-${BUILDROOT_VERSION}"
 BUILDROOT_DEFCONFIG="${BUILDROOT_DEFCONFIG:-qemu_x86_defconfig}"
 BUILDROOT_RESUME="${BUILDROOT_RESUME:-0}"
 BUILDROOT_JOBS="${BUILDROOT_JOBS:-$(nproc)}"
+BUILDROOT_TOPLEVEL_PARALLEL="${BUILDROOT_TOPLEVEL_PARALLEL:-0}" # 0|1, requires BR2_PER_PACKAGE_DIRECTORIES
+BUILDROOT_CCACHE="${BUILDROOT_CCACHE:-1}" # 0|1
+BUILDROOT_CCACHE_DIR="${BUILDROOT_CCACHE_DIR:-${WORK_DIR}/ccache}"
 BUILDROOT_PRIMARY_SITE="${BUILDROOT_PRIMARY_SITE:-https://sources.buildroot.net}"
 BUILDROOT_PRIMARY_SITE_ONLY="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
 BUILDROOT_GLOBAL_PATCH_DIR="${BUILDROOT_GLOBAL_PATCH_DIR:-${ROOT_DIR}/buildroot/patches}"
@@ -84,6 +87,14 @@ if [[ "${BUILDROOT_RESUME}" != "0" ]] && [[ "${BUILDROOT_RESUME}" != "1" ]]; the
     echo "BUILDROOT_RESUME must be 0 or 1 (got: ${BUILDROOT_RESUME})" >&2
     exit 1
 fi
+if [[ "${BUILDROOT_TOPLEVEL_PARALLEL}" != "0" ]] && [[ "${BUILDROOT_TOPLEVEL_PARALLEL}" != "1" ]]; then
+    echo "BUILDROOT_TOPLEVEL_PARALLEL must be 0 or 1 (got: ${BUILDROOT_TOPLEVEL_PARALLEL})" >&2
+    exit 1
+fi
+if [[ "${BUILDROOT_CCACHE}" != "0" ]] && [[ "${BUILDROOT_CCACHE}" != "1" ]]; then
+    echo "BUILDROOT_CCACHE must be 0 or 1 (got: ${BUILDROOT_CCACHE})" >&2
+    exit 1
+fi
 if [[ "${INITRD_MODE}" != "minimal" ]] && [[ "${INITRD_MODE}" != "full" ]]; then
     echo "INITRD_MODE must be 'minimal' or 'full' (got: ${INITRD_MODE})" >&2
     exit 1
@@ -119,6 +130,15 @@ fi
 if [[ -n "${BUILDROOT_GLOBAL_PATCH_DIR}" ]] && [[ ! -d "${BUILDROOT_GLOBAL_PATCH_DIR}" ]]; then
     echo "BUILDROOT_GLOBAL_PATCH_DIR does not exist: ${BUILDROOT_GLOBAL_PATCH_DIR}" >&2
     exit 1
+fi
+
+if ! [[ "${BUILDROOT_JOBS}" =~ ^[0-9]+$ ]] || (( BUILDROOT_JOBS < 1 )); then
+    echo "BUILDROOT_JOBS must be an integer >= 1 (got: ${BUILDROOT_JOBS})" >&2
+    exit 1
+fi
+
+if [[ "${BUILDROOT_CCACHE}" == "1" ]]; then
+    mkdir -p "${BUILDROOT_CCACHE_DIR}"
 fi
 
 if [[ ! -d "${BUILDROOT_SRC}" ]]; then
@@ -361,11 +381,25 @@ case "${PYTHON_MODULE_FORMAT}" in
         python_module_format_config=$'# BR2_PACKAGE_PYTHON3_PY_ONLY is not set\n# BR2_PACKAGE_PYTHON3_PYC_ONLY is not set\nBR2_PACKAGE_PYTHON3_PY_PYC=y'
         ;;
 esac
+
+if [[ "${BUILDROOT_TOPLEVEL_PARALLEL}" == "1" ]]; then
+    buildroot_parallel_config='BR2_PER_PACKAGE_DIRECTORIES=y'
+else
+    buildroot_parallel_config='# BR2_PER_PACKAGE_DIRECTORIES is not set'
+fi
+
+if [[ "${BUILDROOT_CCACHE}" == "1" ]]; then
+    buildroot_ccache_config=$'BR2_CCACHE=y\nBR2_CCACHE_DIR="'"${BUILDROOT_CCACHE_DIR}"'"'
+else
+    buildroot_ccache_config=$'# BR2_CCACHE is not set'
+fi
+
 cat >> "${OUT_DIR}/.config" <<EOF
 BR2_ROOTFS_OVERLAY="${OVERLAY_DIR}"
 # qemu_x86_defconfig adds board/qemu/x86/post-build.sh, which injects tty1 getty.
 # Keep serial-only console by clearing defconfig post-build script.
 BR2_ROOTFS_POST_BUILD_SCRIPT=""
+BR2_JLEVEL=${BUILDROOT_JOBS}
 BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="${BUSYBOX_NO_DHCP_FRAGMENT}"
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="${KERNEL_DRIVER_TRIM_FRAGMENT}"
 BR2_TARGET_ROOTFS_TAR=y
@@ -396,6 +430,8 @@ BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
 BR2_TARGET_GENERIC_GETTY_OPTIONS="-n -l /bin/sh"
 BR2_SYSTEM_DHCP=""
 EOF
+printf '%s\n' "${buildroot_parallel_config}" >> "${OUT_DIR}/.config"
+printf '%s\n' "${buildroot_ccache_config}" >> "${OUT_DIR}/.config"
 printf '%s\n' "${python_module_format_config}" >> "${OUT_DIR}/.config"
 if [[ -n "${adjusted_linux_kernel_version}" ]]; then
     cat >> "${OUT_DIR}/.config" <<EOF

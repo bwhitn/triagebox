@@ -79,6 +79,9 @@ make build-kernel-resume
 - `BUILDROOT_DEFCONFIG` (default `qemu_x86_defconfig`)
 - `BUILDROOT_RESUME` (default `0`; set `1` to reuse existing Buildroot output dir and continue failed builds)
 - `BUILDROOT_JOBS` (default `nproc`)
+- `BUILDROOT_TOPLEVEL_PARALLEL` (default `0`; set `1` to enable Buildroot top-level parallel build via `BR2_PER_PACKAGE_DIRECTORIES`, experimental but often faster)
+- `BUILDROOT_CCACHE` (default `1`; set `0` to disable compiler cache)
+- `BUILDROOT_CCACHE_DIR` (default `.work/buildroot/ccache`)
 - `BUILDROOT_PRIMARY_SITE` (default `https://sources.buildroot.net`)
 - `BUILDROOT_PRIMARY_SITE_ONLY` (default `0`; set to `1` for mirror-only fetches)
 - `BUILDROOT_GLOBAL_PATCH_DIR` (default `buildroot/patches`; applies local package patches during Buildroot builds)
@@ -141,6 +144,7 @@ Examples:
 
 ```bash
 BUILDROOT_VERSION=2026.02-rc1 make build-disk
+BUILDROOT_TOPLEVEL_PARALLEL=1 BUILDROOT_JOBS=8 make build-disk-resume
 BUILDROOT_ONLY=kernel make build-disk
 INITRD_MODE=minimal make build-disk
 INITRD_MODE=full make build-disk

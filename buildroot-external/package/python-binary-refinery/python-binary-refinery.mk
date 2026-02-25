@@ -76,54 +76,34 @@ define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
 	tools_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/lib/tools.py"; \
 	if [ -f "$$tools_py" ] && \
 		! grep -q '__NIXBROWSER_TERMINALFIT_GUARD_V2__' "$$tools_py"; then \
-		cat >> "$$tools_py" <<'PYCODE'
-# __NIXBROWSER_TERMINALFIT_GUARD_V2__
-try:
-    _nixbrowser_terminalfit_original_v2 = terminalfit
-except NameError:
-    _nixbrowser_terminalfit_original_v2 = None
-
-if _nixbrowser_terminalfit_original_v2 is not None:
-    def terminalfit(*args, **kwargs):
-        import os as _nixbrowser_os
-        import shutil as _nixbrowser_shutil
-
-        _nixbrowser_cols = _nixbrowser_os.environ.get("COLUMNS", "")
-        if (not _nixbrowser_cols.isdigit()) or int(_nixbrowser_cols) <= 1:
-            try:
-                _nixbrowser_cols = str(
-                    max(2, _nixbrowser_shutil.get_terminal_size((120, 40)).columns)
-                )
-            except Exception:
-                _nixbrowser_cols = "120"
-            _nixbrowser_os.environ["COLUMNS"] = _nixbrowser_cols
-
-        _nixbrowser_lines = _nixbrowser_os.environ.get("LINES", "")
-        if (not _nixbrowser_lines.isdigit()) or int(_nixbrowser_lines) <= 1:
-            try:
-                _nixbrowser_lines = str(
-                    max(2, _nixbrowser_shutil.get_terminal_size((120, 40)).lines)
-                )
-            except Exception:
-                _nixbrowser_lines = "40"
-            _nixbrowser_os.environ["LINES"] = _nixbrowser_lines
-
-        try:
-            if "width" in kwargs:
-                _nixbrowser_width = int(kwargs.get("width") or 0)
-                if _nixbrowser_width <= 1:
-                    kwargs["width"] = int(_nixbrowser_os.environ["COLUMNS"])
-            elif len(args) >= 2:
-                _nixbrowser_args = list(args)
-                _nixbrowser_width = int(_nixbrowser_args[1] or 0)
-                if _nixbrowser_width <= 1:
-                    _nixbrowser_args[1] = int(_nixbrowser_os.environ["COLUMNS"])
-                args = tuple(_nixbrowser_args)
-        except Exception:
-            pass
-
-        return _nixbrowser_terminalfit_original_v2(*args, **kwargs)
-PYCODE
+		printf '\n%s\n' \
+			'# __NIXBROWSER_TERMINALFIT_GUARD_V2__' \
+			'try:' \
+			'    _nixbrowser_terminalfit_original_v2 = terminalfit' \
+			'except NameError:' \
+			'    _nixbrowser_terminalfit_original_v2 = None' \
+			'' \
+			'if _nixbrowser_terminalfit_original_v2 is not None:' \
+			'    def terminalfit(*args, **kwargs):' \
+			'        import os as _nixbrowser_os' \
+			'        import shutil as _nixbrowser_shutil' \
+			'        _nixbrowser_size = _nixbrowser_shutil.get_terminal_size((120, 40))' \
+			'        _nixbrowser_cols = str(max(2, _nixbrowser_size.columns))' \
+			'        _nixbrowser_lines = str(max(2, _nixbrowser_size.lines))' \
+			'        _nixbrowser_colenv = _nixbrowser_os.environ.get("COLUMNS", "")' \
+			'        _nixbrowser_lineenv = _nixbrowser_os.environ.get("LINES", "")' \
+			'        if (not _nixbrowser_colenv.isdigit()) or int(_nixbrowser_colenv) <= 1:' \
+			'            _nixbrowser_os.environ["COLUMNS"] = _nixbrowser_cols' \
+			'        if (not _nixbrowser_lineenv.isdigit()) or int(_nixbrowser_lineenv) <= 1:' \
+			'            _nixbrowser_os.environ["LINES"] = _nixbrowser_lines' \
+			'        if "width" in kwargs:' \
+			'            try:' \
+			'                if int(kwargs.get("width") or 0) <= 1:' \
+			'                    kwargs["width"] = int(_nixbrowser_os.environ["COLUMNS"])' \
+			'            except Exception:' \
+			'                kwargs["width"] = int(_nixbrowser_os.environ["COLUMNS"])' \
+			'        return _nixbrowser_terminalfit_original_v2(*args, **kwargs)' \
+			>> "$$tools_py"; \
 	fi
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
