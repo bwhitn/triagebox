@@ -45,6 +45,13 @@
   const downloadStatusEl = document.getElementById("download-status");
   const downloadProgressEl = document.getElementById("download-progress");
   const downloadDetailEl = document.getElementById("download-detail");
+  const diskPanelEl = document.getElementById("disk-panel");
+  const customDiskFileEl = document.getElementById("custom-disk-file");
+  const uploadDiskBtn = document.getElementById("upload-disk");
+  const clearCustomDiskBtn = document.getElementById("clear-custom-disk");
+  const diskStatusEl = document.getElementById("disk-status");
+
+  const defaultDiskImage = config.diskImage || "assets/buildroot-linux.img";
 
   let emulator = null;
   let emulatorReadyPromise = null;
@@ -60,6 +67,9 @@
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
+  let activeDiskImage = defaultDiskImage;
+  let diskApiAvailable = true;
+  let diskStateReady = Promise.resolve();
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -98,6 +108,13 @@
 
   function setIps(text) {
     ipsEl.textContent = `instructions/sec: ${text}`;
+  }
+
+  function setDiskStatus(text) {
+    if (!diskStatusEl) {
+      return;
+    }
+    diskStatusEl.textContent = `disk: ${text}`;
   }
 
   function isSerialFullscreen() {
@@ -204,6 +221,91 @@
     }
     const parts = path.split("/").filter(Boolean);
     return parts.length > 0 ? parts[parts.length - 1] : path;
+  }
+
+  function diskLabelFromUrl(url) {
+    if (typeof url !== "string" || url.length === 0) {
+      return "default";
+    }
+    const q = url.indexOf("?");
+    const clean = q >= 0 ? url.slice(0, q) : url;
+    return basename(clean);
+  }
+
+  function disableDiskUploadUi(reason) {
+    diskApiAvailable = false;
+    if (uploadDiskBtn) {
+      uploadDiskBtn.disabled = true;
+    }
+    if (clearCustomDiskBtn) {
+      clearCustomDiskBtn.disabled = true;
+    }
+    if (customDiskFileEl) {
+      customDiskFileEl.disabled = true;
+    }
+    setDiskStatus(`upload api unavailable (${reason})`);
+  }
+
+  function applyDiskState(payload) {
+    const data = payload && typeof payload === "object" ? payload : {};
+    if (data.uploaded === true && typeof data.url === "string" && data.url.length > 0) {
+      activeDiskImage = data.url;
+      const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
+      const name = data.name || diskLabelFromUrl(data.url);
+      setDiskStatus(`custom (${name}${sizeInfo})`);
+      return;
+    }
+    activeDiskImage = defaultDiskImage;
+    setDiskStatus(`default (${diskLabelFromUrl(defaultDiskImage)})`);
+  }
+
+  async function resetVmInstance() {
+    if (!emulator) {
+      return;
+    }
+    try {
+      if (typeof emulator.stop === "function") {
+        await emulator.stop();
+      }
+    } catch (err) {
+      console.warn("failed to stop emulator cleanly before reset", err);
+    }
+    try {
+      if (typeof emulator.destroy === "function") {
+        emulator.destroy();
+      }
+    } catch (err) {
+      console.warn("failed to destroy emulator cleanly", err);
+    }
+    emulator = null;
+    emulatorReadyPromise = null;
+    emulatorReadyResolve = null;
+    stopSampling();
+    clearDownloadHideTimer();
+    setDownloadVisible(false);
+    setIps("n/a");
+    setStatus("idle");
+  }
+
+  async function refreshDiskStateFromServer() {
+    if (!diskPanelEl) {
+      return;
+    }
+    if (!diskApiAvailable) {
+      applyDiskState({ uploaded: false });
+      return;
+    }
+    try {
+      const response = await fetch("/api/upload-disk", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`http ${response.status}`);
+      }
+      const payload = await response.json();
+      applyDiskState(payload);
+    } catch (err) {
+      disableDiskUploadUi(err && err.message ? err.message : "request failed");
+      applyDiskState({ uploaded: false });
+    }
   }
 
   function beginDownloadMeter() {
@@ -479,7 +581,7 @@
       bios: { url: config.bios || "assets/v86/seabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: config.diskImage || "assets/buildroot-linux.img", async: config.asyncDisk === true },
+      hda: { url: activeDiskImage || defaultDiskImage, async: config.asyncDisk === true },
       cmdline,
       net_device: { type: netDeviceType },
       disable_keyboard: !vgaEnabled,
@@ -592,8 +694,98 @@
     return emulator;
   }
 
+  async function uploadSelectedDisk() {
+    if (!diskApiAvailable) {
+      setDiskStatus("upload api unavailable");
+      return;
+    }
+    const file = customDiskFileEl?.files?.[0];
+    if (!file) {
+      setDiskStatus("choose a file first");
+      return;
+    }
+    setDiskStatus(`uploading ${file.name} (${formatBytes(file.size)})...`);
+    if (uploadDiskBtn) {
+      uploadDiskBtn.disabled = true;
+    }
+    if (clearCustomDiskBtn) {
+      clearCustomDiskBtn.disabled = true;
+    }
+    try {
+      const response = await fetch("/api/upload-disk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-Filename": file.name
+        },
+        body: file
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `http ${response.status}`);
+      }
+      const payload = await response.json();
+      applyDiskState(payload);
+      await resetVmInstance();
+      setStatus("idle (custom disk uploaded)");
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskStatus(`upload failed (${msg})`);
+      console.error(err);
+    } finally {
+      if (uploadDiskBtn) {
+        uploadDiskBtn.disabled = false;
+      }
+      if (clearCustomDiskBtn && diskApiAvailable) {
+        clearCustomDiskBtn.disabled = false;
+      }
+    }
+  }
+
+  async function clearCustomDisk() {
+    if (!diskApiAvailable) {
+      applyDiskState({ uploaded: false });
+      await resetVmInstance();
+      setStatus("idle (default disk)");
+      return;
+    }
+    if (clearCustomDiskBtn) {
+      clearCustomDiskBtn.disabled = true;
+    }
+    if (uploadDiskBtn) {
+      uploadDiskBtn.disabled = true;
+    }
+    try {
+      const response = await fetch("/api/upload-disk", {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `http ${response.status}`);
+      }
+      applyDiskState({ uploaded: false });
+      await resetVmInstance();
+      setStatus("idle (default disk)");
+      if (customDiskFileEl) {
+        customDiskFileEl.value = "";
+      }
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskStatus(`clear failed (${msg})`);
+      console.error(err);
+    } finally {
+      if (clearCustomDiskBtn && diskApiAvailable) {
+        clearCustomDiskBtn.disabled = false;
+      }
+      if (uploadDiskBtn && diskApiAvailable) {
+        uploadDiskBtn.disabled = false;
+      }
+    }
+  }
+
   startBtn.addEventListener("click", async () => {
     try {
+      await diskStateReady;
       if (!emulator) {
         beginDownloadMeter();
       }
@@ -636,6 +828,17 @@
     }
   });
 
+  if (uploadDiskBtn) {
+    uploadDiskBtn.addEventListener("click", () => {
+      void uploadSelectedDisk();
+    });
+  }
+  if (clearCustomDiskBtn) {
+    clearCustomDiskBtn.addEventListener("click", () => {
+      void clearCustomDisk();
+    });
+  }
+
   if (serialFullscreenBtn) {
     serialFullscreenBtn.addEventListener("click", () => {
       void toggleSerialFullscreen();
@@ -663,6 +866,10 @@
   }
   if (vgaPanelEl && !vgaEnabled) {
     vgaPanelEl.style.display = "none";
+  }
+
+  if (diskPanelEl) {
+    diskStateReady = refreshDiskStateFromServer();
   }
 
   document.addEventListener("fullscreenchange", () => {

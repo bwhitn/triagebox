@@ -55,6 +55,16 @@ h2 {
   white-space: nowrap;
 }
 
+#custom-disk-file {
+  max-width: 100%;
+}
+
+#disk-status {
+  margin: 0.55rem 0 0;
+  color: #4a5568;
+  font-size: 0.9rem;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;

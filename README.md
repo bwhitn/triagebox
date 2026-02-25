@@ -186,6 +186,8 @@ If enabled at build time, download legal info archive at `http://localhost:8080/
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
+The UI also supports uploading a custom disk image to the local server via `POST /api/upload-disk`.
+Uploaded files are stored at `public/uploads/custom-disk.img`.
 
 ### Docker server (Debian trixie-slim)
 
@@ -198,6 +200,8 @@ If Docker socket permissions fail:
 ```bash
 DOCKER_USE_SUDO=1 make docker-serve
 ```
+
+The compose files mount `public/uploads` read-write so custom disk uploads work in container mode too.
 
 ## Configure boot disk changes
 

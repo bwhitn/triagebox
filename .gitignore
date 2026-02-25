@@ -1,5 +1,7 @@
 .work/
 public/assets/*
 !public/assets/.gitkeep
+public/uploads/*
+!public/uploads/.gitkeep
 __pycache__/
 *.py[cod]

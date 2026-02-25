@@ -5,8 +5,12 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import json
 import os
+import re
 import shutil
+import tempfile
+from urllib.parse import urlsplit
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -42,10 +46,134 @@ COMPRESS_EXT = parse_ext_list(
 )
 COMPRESS_MIN_BYTES = env_int("COMPRESS_MIN_BYTES", 1024)
 COMPRESS_LEVEL = env_int("COMPRESS_LEVEL", 6)
+DISK_UPLOAD_MAX_BYTES = env_int("DISK_UPLOAD_MAX_BYTES", 8 * 1024 * 1024 * 1024)
+DISK_UPLOAD_SUBDIR = os.environ.get("DISK_UPLOAD_SUBDIR", "uploads").strip("/") or "uploads"
+DISK_UPLOAD_FILENAME = os.environ.get("DISK_UPLOAD_FILENAME", "custom-disk.img").strip() or "custom-disk.img"
 
 
 class CompressedStaticHandler(SimpleHTTPRequestHandler):
     server_version = "CompressedHTTP/1.0"
+
+    def _request_path(self) -> str:
+        return urlsplit(self.path).path
+
+    def _uploads_dir(self) -> str:
+        return os.path.join(self.directory, DISK_UPLOAD_SUBDIR)
+
+    def _uploaded_disk_path(self) -> str:
+        return os.path.join(self._uploads_dir(), DISK_UPLOAD_FILENAME)
+
+    def _sanitize_filename(self, value: str) -> str:
+        if not value:
+            return "uploaded.img"
+        base = os.path.basename(value.strip())
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+        return cleaned or "uploaded.img"
+
+    def _send_json(self, status: int, payload: dict, send_body: bool = True) -> None:
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if send_body:
+            self.wfile.write(body)
+
+    def _disk_payload(self, uploaded: bool, *, name: str = "", size: int = 0, mtime: int = 0) -> dict:
+        payload = {"uploaded": uploaded}
+        if uploaded:
+            payload["name"] = name
+            payload["size"] = size
+            payload["mtime"] = mtime
+            payload["url"] = f"/{DISK_UPLOAD_SUBDIR}/{DISK_UPLOAD_FILENAME}?v={mtime}"
+        return payload
+
+    def _handle_get_disk(self, send_body: bool = True) -> None:
+        disk_path = self._uploaded_disk_path()
+        if not os.path.isfile(disk_path):
+            self._send_json(HTTPStatus.OK, self._disk_payload(False), send_body=send_body)
+            return
+        st = os.stat(disk_path)
+        self._send_json(
+            HTTPStatus.OK,
+            self._disk_payload(
+                True,
+                name=os.path.basename(disk_path),
+                size=st.st_size,
+                mtime=int(st.st_mtime),
+            ),
+            send_body=send_body,
+        )
+
+    def _handle_delete_disk(self) -> None:
+        disk_path = self._uploaded_disk_path()
+        try:
+            if os.path.exists(disk_path):
+                os.remove(disk_path)
+        except OSError as exc:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": f"failed to remove uploaded disk: {exc}"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, self._disk_payload(False))
+
+    def _handle_post_disk(self) -> None:
+        content_length_raw = self.headers.get("Content-Length", "").strip()
+        if not content_length_raw:
+            self._send_json(HTTPStatus.LENGTH_REQUIRED, {"error": "Content-Length header is required"})
+            return
+        try:
+            content_length = int(content_length_raw, 10)
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
+            return
+        if content_length <= 0:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body must be non-empty"})
+            return
+        if content_length > DISK_UPLOAD_MAX_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": f"disk upload exceeds max size ({DISK_UPLOAD_MAX_BYTES} bytes)"},
+            )
+            return
+
+        uploads_dir = self._uploads_dir()
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        target_path = self._uploaded_disk_path()
+        fd, tmp_path = tempfile.mkstemp(prefix=".disk-upload-", suffix=".tmp", dir=uploads_dir)
+        try:
+            with os.fdopen(fd, "wb") as tmp_out:
+                remaining = content_length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise OSError("request body ended unexpectedly")
+                    tmp_out.write(chunk)
+                    remaining -= len(chunk)
+            os.replace(tmp_path, target_path)
+        except OSError as exc:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to store uploaded disk: {exc}"})
+            return
+
+        st = os.stat(target_path)
+        requested_name = self._sanitize_filename(self.headers.get("X-Filename", ""))
+        self._send_json(
+            HTTPStatus.OK,
+            self._disk_payload(
+                True,
+                name=requested_name,
+                size=st.st_size,
+                mtime=int(st.st_mtime),
+            ),
+        )
 
     def _parse_range(self, range_header: str, file_size: int) -> tuple[int, int] | None:
         value = range_header.strip()
@@ -208,10 +336,28 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._send_plain_file(path, send_body=send_body)
 
     def do_GET(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/upload-disk":
+            self._handle_get_disk(send_body=True)
+            return
         self._serve(send_body=True)
 
     def do_HEAD(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/upload-disk":
+            self._handle_get_disk(send_body=False)
+            return
         self._serve(send_body=False)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/upload-disk":
+            self._handle_post_disk()
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "endpoint not found")
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/upload-disk":
+            self._handle_delete_disk()
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "endpoint not found")
 
 
 def main() -> None:

@@ -27,6 +27,17 @@
         </div>
       </section>
 
+      <section class="panel" id="disk-panel">
+        <h2>Custom Disk</h2>
+        <p>Upload a raw disk image to the local web server and boot the VM from it.</p>
+        <div class="controls">
+          <input id="custom-disk-file" type="file" accept=".img,.bin,.raw,.qcow2,.vmdk,.iso">
+          <button id="upload-disk">Upload Disk</button>
+          <button id="clear-custom-disk">Use Default Disk</button>
+        </div>
+        <p id="disk-status">disk: default</p>
+      </section>
+
       <section class="panel" id="special-keys-panel">
         <h2>Special Keys</h2>
         <p>Use these when browser keyboard shortcuts interfere with guest input.</p>
