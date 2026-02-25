@@ -27,6 +27,7 @@ KERNEL_CFLAGS="${KERNEL_CFLAGS:--O3}"
 BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION:-0.9.26}"
 PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION:-0.17.3}"
 BUILD_PROFILE="${BUILD_PROFILE:-optimized}"
+PYTHON_MODULE_FORMAT="${PYTHON_MODULE_FORMAT:-pyc}" # pyc|py|both
 PREFETCH_DOWNLOADS="${PREFETCH_DOWNLOADS:-1}"
 PREFETCH_REFINERY_WHEELS="${PREFETCH_REFINERY_WHEELS:-1}"
 REFINERY_WHEELHOUSE_DIR="${REFINERY_WHEELHOUSE_DIR:-${DL_DIR}/python-binary-refinery-wheelhouse}"
@@ -89,6 +90,10 @@ if [[ "${INITRD_MODE}" != "minimal" ]] && [[ "${INITRD_MODE}" != "full" ]]; then
 fi
 if [[ "${BUILDROOT_ONLY}" != "all" ]] && [[ "${BUILDROOT_ONLY}" != "kernel" ]]; then
     echo "BUILDROOT_ONLY must be 'all' or 'kernel' (got: ${BUILDROOT_ONLY})" >&2
+    exit 1
+fi
+if [[ "${PYTHON_MODULE_FORMAT}" != "pyc" ]] && [[ "${PYTHON_MODULE_FORMAT}" != "py" ]] && [[ "${PYTHON_MODULE_FORMAT}" != "both" ]]; then
+    echo "PYTHON_MODULE_FORMAT must be 'pyc', 'py', or 'both' (got: ${PYTHON_MODULE_FORMAT})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -345,6 +350,17 @@ case "${BUILD_PROFILE}" in
         exit 1
         ;;
 esac
+case "${PYTHON_MODULE_FORMAT}" in
+    pyc)
+        python_module_format_config=$'# BR2_PACKAGE_PYTHON3_PY_ONLY is not set\nBR2_PACKAGE_PYTHON3_PYC_ONLY=y\n# BR2_PACKAGE_PYTHON3_PY_PYC is not set'
+        ;;
+    py)
+        python_module_format_config=$'BR2_PACKAGE_PYTHON3_PY_ONLY=y\n# BR2_PACKAGE_PYTHON3_PYC_ONLY is not set\n# BR2_PACKAGE_PYTHON3_PY_PYC is not set'
+        ;;
+    both)
+        python_module_format_config=$'# BR2_PACKAGE_PYTHON3_PY_ONLY is not set\n# BR2_PACKAGE_PYTHON3_PYC_ONLY is not set\nBR2_PACKAGE_PYTHON3_PY_PYC=y'
+        ;;
+esac
 cat >> "${OUT_DIR}/.config" <<EOF
 BR2_ROOTFS_OVERLAY="${OVERLAY_DIR}"
 # qemu_x86_defconfig adds board/qemu/x86/post-build.sh, which injects tty1 getty.
@@ -380,6 +396,7 @@ BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
 BR2_TARGET_GENERIC_GETTY_OPTIONS="-n -l /bin/sh"
 BR2_SYSTEM_DHCP=""
 EOF
+printf '%s\n' "${python_module_format_config}" >> "${OUT_DIR}/.config"
 if [[ -n "${adjusted_linux_kernel_version}" ]]; then
     cat >> "${OUT_DIR}/.config" <<EOF
 BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="${adjusted_linux_kernel_version}"
