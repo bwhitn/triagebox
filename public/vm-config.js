@@ -4,7 +4,10 @@ window.V86_VM_CONFIG = {
   wasmPath: "assets/v86/v86.wasm",
   bzImage: "assets/vmlinuz",
   initrd: "assets/initrd.img",
+  // Primary boot/root disk (Buildroot image).
   diskImage: "assets/buildroot-linux.img",
+  // Secondary writable data disk; used when no custom upload is selected.
+  extraDiskImage: "assets/default-extra.img",
   // Kernel root= value. With the ext2 filesystem image mounted as hda in v86,
   // /dev/sda is the direct root block device (no partition table).
   rootDevice: "/dev/sda",

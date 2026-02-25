@@ -58,7 +58,8 @@
   const diskFilesUpBtn = document.getElementById("disk-files-up");
   const diskFilesRefreshBtn = document.getElementById("disk-files-refresh");
 
-  const defaultDiskImage = config.diskImage || "assets/buildroot-linux.img";
+  const defaultBootDiskImage = config.diskImage || "assets/buildroot-linux.img";
+  const defaultExtraDiskImage = config.extraDiskImage || "assets/default-extra.img";
 
   let emulator = null;
   let emulatorReadyPromise = null;
@@ -74,7 +75,7 @@
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
-  let activeDiskImage = defaultDiskImage;
+  let activeExtraDiskImage = defaultExtraDiskImage;
   let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
   let diskBrowsePath = "/";
@@ -396,10 +397,10 @@
   function applyDiskState(payload) {
     const data = payload && typeof payload === "object" ? payload : {};
     if (data.uploaded === true && typeof data.url === "string" && data.url.length > 0) {
-      activeDiskImage = data.url;
+      activeExtraDiskImage = data.url;
       const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
       const name = data.name || diskLabelFromUrl(data.url);
-      setDiskStatus(`custom (${name}${sizeInfo})`);
+      setDiskStatus(`extra: custom (${name}${sizeInfo})`);
       if (downloadUploadedDiskEl) {
         downloadUploadedDiskEl.href = data.url;
         downloadUploadedDiskEl.hidden = false;
@@ -407,7 +408,7 @@
       setDiskFilesVisible(true);
       return;
     }
-    activeDiskImage = defaultDiskImage;
+    activeExtraDiskImage = defaultExtraDiskImage;
     if (downloadUploadedDiskEl) {
       downloadUploadedDiskEl.hidden = true;
       downloadUploadedDiskEl.removeAttribute("href");
@@ -417,7 +418,7 @@
     setDiskFilesMessage("upload a custom ext disk to browse files");
     clearDiskFilesList();
     setDiskFilesVisible(false);
-    setDiskStatus(`default (${diskLabelFromUrl(defaultDiskImage)})`);
+    setDiskStatus(`extra: default (${diskLabelFromUrl(defaultExtraDiskImage)})`);
   }
 
   async function resetVmInstance() {
@@ -745,7 +746,7 @@
       bios: { url: config.bios || "assets/v86/seabios.bin" },
       bzimage: { url: config.bzImage || "assets/vmlinuz" },
       initrd: { url: config.initrd || "assets/initrd.img" },
-      hda: { url: activeDiskImage || defaultDiskImage, async: config.asyncDisk === true },
+      hda: { url: defaultBootDiskImage, async: config.asyncDisk === true },
       cmdline,
       acpi: false,
       net_device: { type: netDeviceType },
@@ -759,6 +760,9 @@
       boot_order: 0x132,
       autostart: false
     };
+    if (activeExtraDiskImage && activeExtraDiskImage.length > 0) {
+      vmOptions.hdb = { url: activeExtraDiskImage, async: config.asyncDisk === true };
+    }
     if (netDeviceType === "none") {
       vmOptions.disable_ne2k = true;
     }
@@ -900,7 +904,7 @@
       diskBrowsePath = "/";
       await loadDiskEntries(diskBrowsePath);
       await resetVmInstance();
-      setStatus("idle (custom disk uploaded; choose files below to download)");
+      setStatus("idle (custom extra disk uploaded; choose files below to download)");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`upload failed (${msg})`);
@@ -925,7 +929,7 @@
     if (!diskApiAvailable) {
       applyDiskState({ uploaded: false });
       await resetVmInstance();
-      setStatus("idle (default disk)");
+      setStatus("idle (default extra disk)");
       return;
     }
     if (clearCustomDiskBtn) {
@@ -950,7 +954,7 @@
       }
       applyDiskState({ uploaded: false });
       await resetVmInstance();
-      setStatus("idle (default disk)");
+      setStatus("idle (default extra disk)");
       if (customDiskFileEl) {
         customDiskFileEl.value = "";
       }

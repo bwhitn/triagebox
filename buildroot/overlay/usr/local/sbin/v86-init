@@ -52,6 +52,20 @@ set_term_dimensions() {
 
 set_term_dimensions
 
+mount_extra_disk() {
+    mountpoint="/root"
+    for dev in /dev/sdb /dev/vdb /dev/hdb; do
+        [ -b "$dev" ] || continue
+        if mount -t auto "$dev" "$mountpoint" 2>/dev/null; then
+            echo "Mounted extra disk ${dev} on ${mountpoint}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+mount_extra_disk || true
+
 echo ""
 echo "Buildroot Linux running on v86"
 echo "Type 'poweroff -f' to stop, or 'reboot -f' to restart."

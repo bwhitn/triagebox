@@ -182,11 +182,16 @@ make serve
 ```
 
 Open `http://localhost:8080`.
+(`make server` is an alias for `make serve`.)
+If `public/assets/default-extra.img` is missing, `make serve` auto-creates a blank ext2
+secondary disk image (size controlled by `DEFAULT_EXTRA_DISK_MB`, default `256`).
 If enabled at build time, download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 The UI also supports uploading a custom disk image to the local server via `POST /api/upload-disk`.
+Uploaded disks are attached as secondary VM disk (`hdb`/`/dev/sdb`), while Buildroot remains the boot/root disk (`hda`/`/dev/sda`).
+Guest init attempts to auto-mount the secondary disk on `/root`.
 Uploaded files are stored at `public/uploads/custom-disk.img`.
 When a custom ext disk is uploaded, the UI can browse entries via `GET /api/upload-disk/files?path=/...`
 and download selected files via `GET /api/upload-disk/file?path=/...`.
@@ -196,6 +201,8 @@ and download selected files via `GET /api/upload-disk/file?path=/...`.
 ```bash
 make docker-serve
 ```
+
+`make docker-serve` also ensures the same default blank ext2 secondary disk exists on host before starting the container.
 
 If Docker socket permissions fail:
 

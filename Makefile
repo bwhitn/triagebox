@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build build-resume preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve docker-serve clean
+.PHONY: build build-resume preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve clean
 
 build: fetch-v86 build-disk
 
@@ -43,12 +43,14 @@ audit-runtime:
 serve:
 	./scripts/serve-local.sh
 
+server: serve
+
 docker-serve:
 	./scripts/compose-up.sh
 
 clean:
 	rm -rf .work
-	rm -f public/assets/buildroot-linux.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt public/assets/binary-refinery-missing-buildroot-packages.txt
+	rm -f public/assets/buildroot-linux.img public/assets/default-extra.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt public/assets/binary-refinery-missing-buildroot-packages.txt
 	rm -rf public/assets/v86 public/assets/xterm
 	mkdir -p public/assets
 	touch public/assets/.gitkeep
