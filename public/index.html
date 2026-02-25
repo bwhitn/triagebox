@@ -29,22 +29,14 @@
 
       <section class="panel" id="disk-panel">
         <h2>Root Exchange</h2>
-        <p>Import files from the server into the VM root filesystem (for example under <code>/root</code>).</p>
+        <p>Stage non-persistent boot imports from server files into the running VM (disk image is not modified).</p>
         <div class="controls">
           <input id="inject-server-src" type="text" placeholder="assets/sample.bin">
           <input id="inject-disk-path" type="text" placeholder="/root/from-server.bin">
-          <button id="inject-disk-file-btn" type="button">Import Server File to VM RootFS</button>
+          <button id="inject-disk-file-btn" type="button">Stage Non-Persistent Boot Import</button>
+          <button id="clear-boot-imports-btn" type="button">Clear Staged Imports</button>
         </div>
-        <p id="disk-status">disk: checking rootfs api...</p>
-        <div id="disk-files-browser" class="disk-files-browser" hidden>
-          <div class="controls">
-            <button id="disk-files-up" type="button">Up</button>
-            <button id="disk-files-refresh" type="button">Refresh</button>
-            <code id="disk-files-path">/root</code>
-          </div>
-          <p id="disk-files-message">Loading VM rootfs view...</p>
-          <ul id="disk-files-list" class="disk-files-list"></ul>
-        </div>
+        <p id="disk-status">disk: non-persistent import mode</p>
       </section>
 
       <section class="panel" id="special-keys-panel">

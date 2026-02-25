@@ -49,13 +49,8 @@
   const injectServerSrcEl = document.getElementById("inject-server-src");
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
+  const clearBootImportsBtn = document.getElementById("clear-boot-imports-btn");
   const diskStatusEl = document.getElementById("disk-status");
-  const diskFilesBrowserEl = document.getElementById("disk-files-browser");
-  const diskFilesPathEl = document.getElementById("disk-files-path");
-  const diskFilesMessageEl = document.getElementById("disk-files-message");
-  const diskFilesListEl = document.getElementById("disk-files-list");
-  const diskFilesUpBtn = document.getElementById("disk-files-up");
-  const diskFilesRefreshBtn = document.getElementById("disk-files-refresh");
 
   const defaultBootDiskImage = config.diskImage || "assets/buildroot-linux.img";
 
@@ -73,9 +68,10 @@
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
-  let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
-  let diskBrowsePath = "/root";
+  const BOOT_IMPORTS_STORAGE_KEY = "nixbrowser.boot_imports.v1";
+  let bootImports = [];
+  let bootImportInFlight = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -107,6 +103,7 @@
     alt_f1: [0x38, 0x3b, 0xbb, 0xb8],
     alt_f2: [0x38, 0x3c, 0xbc, 0xb8]
   };
+  const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
 
   function setStatus(text) {
     statusEl.textContent = `status: ${text}`;
@@ -123,34 +120,6 @@
     diskStatusEl.textContent = `disk: ${text}`;
   }
 
-  function setDiskFilesVisible(visible) {
-    if (!diskFilesBrowserEl) {
-      return;
-    }
-    diskFilesBrowserEl.hidden = !visible;
-  }
-
-  function setDiskFilesPath(path) {
-    if (!diskFilesPathEl) {
-      return;
-    }
-    diskFilesPathEl.textContent = path;
-  }
-
-  function setDiskFilesMessage(text) {
-    if (!diskFilesMessageEl) {
-      return;
-    }
-    diskFilesMessageEl.textContent = text;
-  }
-
-  function clearDiskFilesList() {
-    if (!diskFilesListEl) {
-      return;
-    }
-    diskFilesListEl.textContent = "";
-  }
-
   function parentDiskPath(path) {
     if (typeof path !== "string" || path.length === 0 || path === "/") {
       return "/";
@@ -161,92 +130,6 @@
       return "/";
     }
     return trimmed.slice(0, idx);
-  }
-
-  function renderDiskEntries(path, entries) {
-    if (!diskFilesListEl) {
-      return;
-    }
-    clearDiskFilesList();
-
-    if (!Array.isArray(entries) || entries.length === 0) {
-      setDiskFilesMessage(`no entries in ${path}`);
-      return;
-    }
-
-    setDiskFilesMessage(`showing ${entries.length} entries`);
-    for (const entry of entries) {
-      if (!entry || typeof entry !== "object") {
-        continue;
-      }
-      const item = document.createElement("li");
-
-      const label = document.createElement("span");
-      label.className = "disk-file-name";
-      const typeLabel = entry.type === "dir" ? "[dir]" : entry.type === "regular" ? "[file]" : "[other]";
-      label.textContent = `${typeLabel} ${entry.name || entry.path || "unknown"}`;
-      item.appendChild(label);
-
-      const actions = document.createElement("span");
-      actions.className = "disk-file-actions";
-
-      const meta = document.createElement("span");
-      meta.className = "disk-file-meta";
-      if (Number.isFinite(entry.size)) {
-        meta.textContent = formatBytes(entry.size);
-      } else {
-        meta.textContent = "n/a";
-      }
-      actions.appendChild(meta);
-
-      if (entry.type === "dir") {
-        const openBtn = document.createElement("button");
-        openBtn.type = "button";
-        openBtn.textContent = "Open";
-        openBtn.addEventListener("click", () => {
-          if (typeof entry.path === "string" && entry.path.length > 0) {
-            void loadDiskEntries(entry.path);
-          }
-        });
-        actions.appendChild(openBtn);
-      } else if (entry.type === "regular") {
-        const downloadLink = document.createElement("a");
-        downloadLink.textContent = "Download";
-        downloadLink.href = `/api/vm-root/file?path=${encodeURIComponent(entry.path || "")}`;
-        if (typeof entry.name === "string" && entry.name.length > 0) {
-          downloadLink.setAttribute("download", entry.name);
-        }
-        actions.appendChild(downloadLink);
-      }
-
-      item.appendChild(actions);
-      diskFilesListEl.appendChild(item);
-    }
-  }
-
-  async function loadDiskEntries(path = diskBrowsePath) {
-    if (!diskApiAvailable) {
-      return;
-    }
-    const targetPath = typeof path === "string" && path.length > 0 ? path : "/";
-    setDiskFilesPath(targetPath);
-    setDiskFilesMessage(`loading ${targetPath}...`);
-
-    try {
-      const response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(targetPath)}`, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      const payload = await response.json();
-      diskBrowsePath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : targetPath;
-      setDiskFilesPath(diskBrowsePath);
-      renderDiskEntries(diskBrowsePath, payload.entries);
-      setDiskFilesVisible(true);
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      setDiskFilesMessage(`browse failed (${msg})`);
-      clearDiskFilesList();
-    }
   }
 
   function isSerialFullscreen() {
@@ -347,6 +230,166 @@
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
   }
 
+  function shellQuote(value) {
+    const raw = String(value);
+    return `'${raw.replace(/'/g, `'\"'\"'`)}'`;
+  }
+
+  function normalizeGuestPath(inputPath, fallbackName) {
+    const raw = String(inputPath || "").trim();
+    const base = raw.length > 0 ? raw : `/root/${fallbackName}`;
+    if (/[\x00\n\r]/.test(base)) {
+      throw new Error("invalid destination path");
+    }
+    const absolute = base.startsWith("/") ? base : `/${base}`;
+    const pieces = [];
+    for (const segment of absolute.split("/")) {
+      if (!segment || segment === ".") {
+        continue;
+      }
+      if (segment === "..") {
+        if (pieces.length > 0) {
+          pieces.pop();
+        }
+        continue;
+      }
+      pieces.push(segment);
+    }
+    return `/${pieces.join("/")}`;
+  }
+
+  function normalizeServerSourcePath(src) {
+    const value = String(src || "").trim();
+    if (!value) {
+      throw new Error("missing server source path");
+    }
+    if (/^https?:\/\//i.test(value)) {
+      throw new Error("server source must be a local path");
+    }
+    if (/[\x00\n\r]/.test(value)) {
+      throw new Error("invalid server source path");
+    }
+    return value.startsWith("/") ? value : `/${value}`;
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
+
+  function loadBootImports() {
+    try {
+      const raw = window.localStorage.getItem(BOOT_IMPORTS_STORAGE_KEY);
+      if (!raw) {
+        bootImports = [];
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        bootImports = [];
+        return;
+      }
+      bootImports = parsed
+        .filter((entry) => entry && typeof entry === "object")
+        .map((entry) => ({
+          srcPath: String(entry.srcPath || "").trim(),
+          targetPath: String(entry.targetPath || "").trim()
+        }))
+        .filter((entry) => entry.srcPath.length > 0 && entry.targetPath.length > 0);
+    } catch (err) {
+      bootImports = [];
+    }
+  }
+
+  function saveBootImports() {
+    try {
+      window.localStorage.setItem(BOOT_IMPORTS_STORAGE_KEY, JSON.stringify(bootImports));
+    } catch (err) {
+      // best-effort persistence only
+    }
+  }
+
+  function upsertBootImport(srcPath, targetPath) {
+    const existingIndex = bootImports.findIndex((entry) => entry.targetPath === targetPath);
+    const item = { srcPath, targetPath };
+    if (existingIndex >= 0) {
+      bootImports[existingIndex] = item;
+    } else {
+      bootImports.push(item);
+    }
+    saveBootImports();
+  }
+
+  function clearBootImports() {
+    bootImports = [];
+    saveBootImports();
+    setDiskStatus("cleared staged boot imports");
+  }
+
+  function buildRuntimeImportScript(targetPath, base64Data) {
+    const parentPath = parentDiskPath(targetPath);
+    const tempPath = `/tmp/.nixbrowser-import-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.b64`;
+    const encodedLines = base64Data.match(/.{1,76}/g) || [];
+    return [
+      `mkdir -p ${shellQuote(parentPath)} || exit 1`,
+      `cat > ${shellQuote(tempPath)} <<'__NIXBROWSER_IMPORT_B64__'`,
+      ...encodedLines,
+      "__NIXBROWSER_IMPORT_B64__",
+      `(base64 -d ${shellQuote(tempPath)} > ${shellQuote(targetPath)} || busybox base64 -d ${shellQuote(tempPath)} > ${shellQuote(targetPath)})`,
+      "rc=$?",
+      `rm -f ${shellQuote(tempPath)}`,
+      "if [ \"$rc\" -eq 0 ]; then echo '[import] ok'; else echo '[import] failed'; fi"
+    ].join("\n");
+  }
+
+  async function stageImportIntoRunningVm(srcPath, targetPath) {
+    const sourceResp = await fetch(srcPath, { cache: "no-store" });
+    if (!sourceResp.ok) {
+      throw new Error(await readResponseError(sourceResp));
+    }
+    const sourceBytes = new Uint8Array(await sourceResp.arrayBuffer());
+    if (sourceBytes.byteLength <= 0) {
+      throw new Error("source file is empty");
+    }
+    if (sourceBytes.byteLength > MAX_RUNTIME_IMPORT_BYTES) {
+      throw new Error(`source file exceeds runtime limit (${formatBytes(MAX_RUNTIME_IMPORT_BYTES)})`);
+    }
+    const payload = bytesToBase64(sourceBytes);
+    const script = `${buildRuntimeImportScript(targetPath, payload)}\n`;
+    if (!sendSerialText(script)) {
+      throw new Error("serial console not available");
+    }
+    return sourceBytes.byteLength;
+  }
+
+  async function applyBootImportsToRunningVm(source = "manual") {
+    if (!hasRunningVm() || bootImports.length === 0 || bootImportInFlight) {
+      return;
+    }
+    bootImportInFlight = true;
+    try {
+      for (const entry of bootImports) {
+        await stageImportIntoRunningVm(entry.srcPath, entry.targetPath);
+      }
+      if (source === "boot") {
+        setDiskStatus(`applied ${bootImports.length} boot import(s)`);
+      } else {
+        setDiskStatus(`import staged; ${bootImports.length} boot import(s) active`);
+      }
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskStatus(`runtime import failed (${msg})`);
+      console.error(err);
+    } finally {
+      bootImportInFlight = false;
+    }
+  }
+
   function basename(path) {
     if (typeof path !== "string" || path.length === 0) {
       return "asset";
@@ -380,127 +423,57 @@
   }
 
   async function importServerFileIntoVmRoot() {
-    if (!diskApiAvailable) {
-      setDiskStatus("inject unavailable (disk api unavailable)");
-      return;
-    }
-    const src = (injectServerSrcEl?.value || "").trim();
-    if (!src) {
+    const srcRaw = (injectServerSrcEl?.value || "").trim();
+    if (!srcRaw) {
       setDiskStatus("enter a server file path (e.g. assets/tool.bin)");
       return;
     }
-    const requestedPath = (injectDiskPathEl?.value || "").trim();
-    const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
-    const targetPath = requestedPath.length > 0 ? requestedPath : `/${sourceName}`;
+    let srcPath;
+    let targetPath;
+    try {
+      srcPath = normalizeServerSourcePath(srcRaw);
+      const sourceName = basename(srcPath) || "server-file.bin";
+      targetPath = normalizeGuestPath(injectDiskPathEl?.value || "", sourceName);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskStatus(`invalid import request (${msg})`);
+      return;
+    }
+
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
     }
-    setDiskStatus(`importing ${src} -> ${targetPath} in vm rootfs...`);
+    setDiskStatus(`staging ${srcPath} -> ${targetPath} (non-persistent boot import)...`);
     try {
-      const response = await fetch(
-        `/api/vm-root/import?src=${encodeURIComponent(src)}&path=${encodeURIComponent(targetPath)}`,
-        { method: "POST" }
-      );
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      const payload = await response.json();
-      setDiskStatus(`imported ${payload.path} (${formatBytes(payload.size)})`);
-      const importedPath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : targetPath;
-      await loadDiskEntries(parentDiskPath(importedPath));
-      if (emulator) {
-        await resetVmInstance();
-        setStatus("idle (file imported; click Start to boot with updated rootfs)");
+      upsertBootImport(srcPath, targetPath);
+      if (hasRunningVm()) {
+        const size = await stageImportIntoRunningVm(srcPath, targetPath);
+        setDiskStatus(`imported to running VM (${formatBytes(size)}); will reapply on next boot`);
+        setStatus("running (non-persistent import applied)");
       } else {
-        setStatus("idle (file imported into vm rootfs)");
+        setDiskStatus(`queued for next boot (${bootImports.length} import(s) configured)`);
+        setStatus("idle (import queued; start VM to apply)");
       }
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
-      setDiskStatus(`inject failed (${msg})`);
+      setDiskStatus(`import failed (${msg})`);
       console.error(err);
     } finally {
-      if (injectDiskFileBtn && diskApiAvailable) {
+      if (injectDiskFileBtn) {
         injectDiskFileBtn.disabled = false;
       }
     }
-  }
-
-  function disableDiskUploadUi(reason) {
-    diskApiAvailable = false;
-    if (diskFilesUpBtn) {
-      diskFilesUpBtn.disabled = true;
-    }
-    if (diskFilesRefreshBtn) {
-      diskFilesRefreshBtn.disabled = true;
-    }
-    if (injectServerSrcEl) {
-      injectServerSrcEl.disabled = true;
-    }
-    if (injectDiskPathEl) {
-      injectDiskPathEl.disabled = true;
-    }
-    if (injectDiskFileBtn) {
-      injectDiskFileBtn.disabled = true;
-    }
-    setDiskFilesVisible(false);
-    clearDiskFilesList();
-    setDiskStatus(`rootfs api unavailable (${reason})`);
-  }
-
-  async function resetVmInstance() {
-    if (!emulator) {
-      return;
-    }
-    try {
-      if (typeof emulator.stop === "function") {
-        await emulator.stop();
-      }
-    } catch (err) {
-      console.warn("failed to stop emulator cleanly before reset", err);
-    }
-    try {
-      if (typeof emulator.destroy === "function") {
-        emulator.destroy();
-      }
-    } catch (err) {
-      console.warn("failed to destroy emulator cleanly", err);
-    }
-    emulator = null;
-    emulatorReadyPromise = null;
-    emulatorReadyResolve = null;
-    stopSampling();
-    clearDownloadHideTimer();
-    setDownloadVisible(false);
-    setIps("n/a");
-    setStatus("idle");
   }
 
   async function refreshDiskStateFromServer() {
     if (!diskPanelEl) {
       return;
     }
-    if (!diskApiAvailable) {
-      setDiskStatus("rootfs api unavailable");
-      return;
-    }
-    try {
-      let response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(diskBrowsePath)}`, { cache: "no-store" });
-      if (!response.ok && response.status === 404 && diskBrowsePath !== "/") {
-        diskBrowsePath = "/";
-        response = await fetch(`/api/vm-root/files?path=${encodeURIComponent(diskBrowsePath)}`, { cache: "no-store" });
-      }
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      const payload = await response.json();
-      const initialPath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : diskBrowsePath;
-      diskBrowsePath = initialPath;
-      setDiskFilesPath(initialPath);
-      renderDiskEntries(initialPath, payload.entries);
-      setDiskFilesVisible(true);
-      setDiskStatus("vm rootfs import api ready");
-    } catch (err) {
-      disableDiskUploadUi(err && err.message ? err.message : "request failed");
+    loadBootImports();
+    if (bootImports.length > 0) {
+      setDiskStatus(`non-persistent boot imports configured: ${bootImports.length}`);
+    } else {
+      setDiskStatus("non-persistent mode: add a server file import and start VM");
     }
   }
 
@@ -703,6 +676,11 @@
     return true;
   }
 
+  function sendSerialText(text) {
+    const encoder = new TextEncoder();
+    return sendSerialBytes(encoder.encode(text));
+  }
+
   async function sendSpecialKeys(name) {
     if (!hasRunningVm()) {
       setStatus("stopped (start VM first)");
@@ -883,6 +861,14 @@
     emulator.add_listener("emulator-started", () => {
       setStatus("running");
       startSampling();
+      if (bootImports.length > 0) {
+        window.setTimeout(() => {
+          void applyBootImportsToRunningVm("boot");
+        }, 1500);
+        window.setTimeout(() => {
+          void applyBootImportsToRunningVm("boot");
+        }, 4500);
+      }
     });
 
     emulator.add_listener("emulator-stopped", () => {
@@ -955,21 +941,15 @@
       const current = injectDiskPathEl.value.trim();
       if (current.length === 0) {
         const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
-        injectDiskPathEl.value = `/${sourceName}`;
+        injectDiskPathEl.value = `/root/${sourceName}`;
       }
     });
   }
-  if (diskFilesUpBtn) {
-    diskFilesUpBtn.addEventListener("click", () => {
-      void loadDiskEntries(parentDiskPath(diskBrowsePath));
+  if (clearBootImportsBtn) {
+    clearBootImportsBtn.addEventListener("click", () => {
+      clearBootImports();
     });
   }
-  if (diskFilesRefreshBtn) {
-    diskFilesRefreshBtn.addEventListener("click", () => {
-      void loadDiskEntries(diskBrowsePath);
-    });
-  }
-
   if (serialFullscreenBtn) {
     serialFullscreenBtn.addEventListener("click", () => {
       void toggleSerialFullscreen();

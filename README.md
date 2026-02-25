@@ -188,14 +188,14 @@ If present, missing optional binary-refinery wheel report is at `http://localhos
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
-The UI rootfs import workflow:
-- `Import Server File to VM RootFS` copies an existing server file into the Buildroot boot disk via
-  `POST /api/vm-root/import?src=assets/example.bin&path=/root/example.bin`
-- File browser can list and download files with `GET /api/vm-root/files?path=/...` and `GET /api/vm-root/file?path=/...`
+The UI import workflow is non-persistent:
+- `Stage Non-Persistent Boot Import` registers a server file/path mapping and injects it over serial into the running VM.
+- The import is automatically re-applied on each boot start in the browser session.
+- `Clear Staged Imports` removes all staged mappings from browser storage.
+- The Buildroot disk image file is not modified by this workflow.
 Server import source root defaults to `public/` and can be changed with `DISK_IMPORT_ROOT`.
-Target root disk defaults to `public/assets/buildroot-linux.img` and can be changed with `VM_ROOT_DISK`.
-When importing a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
-boots with the updated root filesystem image.
+Large files are intentionally capped for runtime serial injection (`MAX_RUNTIME_IMPORT_BYTES` in `public/app.js`).
+Persistent disk-modifying vm-root APIs are disabled by default; set `ENABLE_PERSISTENT_VM_ROOT_API=1` to re-enable them.
 
 ### Docker server (Debian trixie-slim)
 

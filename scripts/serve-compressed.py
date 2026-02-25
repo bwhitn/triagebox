@@ -56,6 +56,12 @@ DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 
 DISK_FILE_UPLOAD_MAX_BYTES = env_int("DISK_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024)
 DISK_IMPORT_ROOT = os.environ.get("DISK_IMPORT_ROOT", ".").strip() or "."
 VM_ROOT_DISK = os.environ.get("VM_ROOT_DISK", "assets/buildroot-linux.img").strip() or "assets/buildroot-linux.img"
+ENABLE_PERSISTENT_VM_ROOT_API = os.environ.get("ENABLE_PERSISTENT_VM_ROOT_API", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
 DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
@@ -998,12 +1004,13 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._send_plain_file(path, send_body=send_body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self._request_path() == "/api/vm-root/files":
-            self._handle_get_vm_root_files(send_body=True)
-            return
-        if self._request_path() == "/api/vm-root/file":
-            self._handle_download_vm_root_file(send_body=True)
-            return
+        if ENABLE_PERSISTENT_VM_ROOT_API:
+            if self._request_path() == "/api/vm-root/files":
+                self._handle_get_vm_root_files(send_body=True)
+                return
+            if self._request_path() == "/api/vm-root/file":
+                self._handle_download_vm_root_file(send_body=True)
+                return
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=True)
             return
@@ -1016,12 +1023,13 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._serve(send_body=True)
 
     def do_HEAD(self) -> None:  # noqa: N802
-        if self._request_path() == "/api/vm-root/files":
-            self._handle_get_vm_root_files(send_body=False)
-            return
-        if self._request_path() == "/api/vm-root/file":
-            self._handle_download_vm_root_file(send_body=False)
-            return
+        if ENABLE_PERSISTENT_VM_ROOT_API:
+            if self._request_path() == "/api/vm-root/files":
+                self._handle_get_vm_root_files(send_body=False)
+                return
+            if self._request_path() == "/api/vm-root/file":
+                self._handle_download_vm_root_file(send_body=False)
+                return
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=False)
             return
@@ -1034,7 +1042,7 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._serve(send_body=False)
 
     def do_POST(self) -> None:  # noqa: N802
-        if self._request_path() == "/api/vm-root/import":
+        if ENABLE_PERSISTENT_VM_ROOT_API and self._request_path() == "/api/vm-root/import":
             self._handle_import_vm_root_file()
             return
         if self._request_path() == "/api/upload-disk":
