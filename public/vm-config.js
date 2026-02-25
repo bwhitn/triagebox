@@ -1,5 +1,5 @@
 window.V86_VM_CONFIG = {
-  memoryMb: 512,
+  memoryMb: 1024,
   bios: "assets/v86/seabios.bin",
   wasmPath: "assets/v86/v86.wasm",
   bzImage: "assets/vmlinuz",

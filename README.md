@@ -5,7 +5,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - Buildroot guest root filesystem (`qemu_x86_defconfig`)
 - No audio, no CD-ROM image, no floppy image, serial console first, and mouse disabled
 - Serial console enabled by default (can be disabled at build time)
-- 512MB RAM default
+- 1GB RAM default
 - Lightweight runtime throughput display (`instructions/sec`)
 
 ## What is included
@@ -122,7 +122,7 @@ make build-kernel-resume
 - `EXTRA_MB` (default `32`)
 - `MIN_DISK_MB` (default `64`)
 - `AUTO_SHRINK` (default `1`)
-- `SHRINK_PAD_MB` (default `2`)
+- `SHRINK_PAD_MB` (default `0`)
 - `SHRINK_MIN_MB` (default `0`)
 - `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
 - `FETCH_VGA_BIOS` (default `0`; set `1` only when you enable VGA output)
@@ -150,7 +150,7 @@ INITRD_MODE=minimal make build-disk
 INITRD_MODE=full make build-disk
 DISK_MB=512 make build-disk
 AUTO_SHRINK=0 make build-disk
-SHRINK_PAD_MB=1 SHRINK_MIN_MB=0 make build-disk
+SHRINK_PAD_MB=0 SHRINK_MIN_MB=0 make build-disk
 BUILDROOT_PRIMARY_SITE=https://sources.buildroot.net BUILDROOT_PRIMARY_SITE_ONLY=1 make build-disk
 BUILD_PROFILE=optimized make build-disk
 BUILD_PROFILE=fast make build-disk
@@ -242,7 +242,7 @@ PAD_MB=8 ./scripts/shrink-image.sh public/assets/buildroot-linux.img
 
 Edit `public/vm-config.js`:
 
-- `memoryMb` defaults to `512`
+- `memoryMb` defaults to `1024`
 - `cmdline` override is optional (if empty, app.js uses defaults)
 - `rootFsType` is injected at build time as `ext2`
 - `enableSerial` defaults to `true` (build flag can override via `public/build-config.js`)

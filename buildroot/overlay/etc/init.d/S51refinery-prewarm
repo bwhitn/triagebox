@@ -1,0 +1,40 @@
+#!/bin/sh
+# Prewarm binary-refinery once per boot to reduce first interactive startup cost.
+
+case "$1" in
+	start)
+		STATE_DIR=/run
+		[ -d "$STATE_DIR" ] || STATE_DIR=/tmp
+		MARKER="$STATE_DIR/refinery-prewarm.done"
+
+		[ -e "$MARKER" ] && exit 0
+		: > "$MARKER"
+
+		(
+			PATH=/usr/sbin:/usr/bin:/sbin:/bin
+			export HOME=/root
+			export TERM="${TERM:-xterm}"
+			export COLUMNS="${COLUMNS:-120}"
+			export LINES="${LINES:-40}"
+			export XDG_CACHE_HOME=/var/cache/refinery
+
+			mkdir -p "$XDG_CACHE_HOME" 2>/dev/null || true
+			sleep 2
+
+			if command -v binref >/dev/null 2>&1; then
+				_BINREF=binref
+			elif command -v ref-binref >/dev/null 2>&1; then
+				_BINREF=ref-binref
+			else
+				exit 0
+			fi
+
+			if command -v nice >/dev/null 2>&1; then
+				exec nice -n 19 "$_BINREF" -h >/dev/null 2>&1
+			fi
+			exec "$_BINREF" -h >/dev/null 2>&1
+		) &
+		;;
+esac
+
+exit 0

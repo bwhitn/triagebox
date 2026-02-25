@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IMAGE_PATH="${1:-public/assets/buildroot-linux.img}"
-PAD_MB="${PAD_MB:-32}"
+PAD_MB="${PAD_MB:-0}"
 MIN_MB="${MIN_MB:-0}"
 BACKUP_PATH="${BACKUP_PATH:-}"
 
