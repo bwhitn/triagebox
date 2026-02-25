@@ -189,18 +189,15 @@ If enabled at build time, download legal info archive at `http://localhost:8080/
 If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
-The UI also supports uploading a custom disk image to the local server via `POST /api/upload-disk`.
-Uploaded disks are attached as secondary VM disk (`hdb`/`/dev/sdb`), while Buildroot remains the boot/root disk (`hda`/`/dev/sda`).
-Guest init attempts to auto-mount the secondary disk on `/root`.
-Uploaded files are stored at `public/uploads/custom-disk.img`.
-When a custom ext disk is uploaded, the UI can browse entries via `GET /api/upload-disk/files?path=/...`
-and download selected files via `GET /api/upload-disk/file?path=/...`.
-The UI also includes an exchange workflow:
-- `Inject File to Extra Disk` writes a single file into the server-side extra disk via `PUT /api/upload-disk/file?path=/...`
+Buildroot root disk remains the primary boot/root disk (`hda`/`/dev/sda`).
+The exchange disk is secondary (`hdb`/`/dev/sdb`) and server-managed at `public/uploads/custom-disk.img`.
+The UI exchange workflow:
+- `Inject File to Extra Disk` writes a single file into the exchange disk via `PUT /api/upload-disk/file?path=/...`
 - `Sync /root to Server` exports the current VM extra disk buffer back to `public/uploads/custom-disk.img`
 - Optional `Auto Sync` repeats the export on an interval
+- File browser can list and download files with `GET /api/upload-disk/files?path=/...` and `GET /api/upload-disk/file?path=/...`
 When injecting a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
-loads the updated extra disk image.
+loads the updated exchange disk image.
 
 ### Docker server (Debian trixie-slim)
 

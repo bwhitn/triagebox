@@ -28,17 +28,8 @@
       </section>
 
       <section class="panel" id="disk-panel">
-        <h2>Custom Disk</h2>
-        <p>Upload a raw disk image as a secondary data disk. Buildroot boot/root disk remains unchanged.</p>
-        <div class="controls">
-          <input id="custom-disk-file" type="file" accept=".img,.bin,.raw,.qcow2,.vmdk,.iso">
-          <button id="upload-disk">Upload Disk</button>
-          <button id="clear-custom-disk">Use Default Extra Disk</button>
-        </div>
-        <div class="controls">
-          <button id="mount-extra-disk" type="button">Mount Extra Disk (/root)</button>
-          <button id="unmount-extra-disk" type="button">Unmount /root</button>
-        </div>
+        <h2>Root Exchange</h2>
+        <p>Exchange files with guest <code>/root</code> through the server-managed extra disk.</p>
         <div class="controls">
           <input id="inject-disk-file" type="file">
           <input id="inject-disk-path" type="text" placeholder="/from-server.bin">
@@ -52,23 +43,14 @@
           </label>
           <input id="auto-sync-seconds" type="number" min="3" value="15" title="Auto sync interval (seconds)">
         </div>
-        <p id="disk-status">disk: extra default</p>
-        <p><a id="download-uploaded-disk" href="#" hidden>Download Uploaded Disk Image</a></p>
-        <div id="disk-download-prompt" class="disk-files-browser" hidden>
-          <p id="disk-download-message">No file scan results yet.</p>
-          <ul id="disk-download-list" class="disk-files-list"></ul>
-          <div class="controls">
-            <button id="disk-download-selected" type="button">Download Selected</button>
-            <button id="disk-download-dismiss" type="button">Dismiss</button>
-          </div>
-        </div>
+        <p id="disk-status">disk: exchange default</p>
         <div id="disk-files-browser" class="disk-files-browser" hidden>
           <div class="controls">
             <button id="disk-files-up" type="button">Up</button>
             <button id="disk-files-refresh" type="button">Refresh</button>
             <code id="disk-files-path">/</code>
           </div>
-          <p id="disk-files-message">Upload a custom ext disk to browse files.</p>
+          <p id="disk-files-message">Run Sync /root to Server once to initialize exchange disk browsing.</p>
           <ul id="disk-files-list" class="disk-files-list"></ul>
         </div>
       </section>

@@ -46,11 +46,6 @@
   const downloadProgressEl = document.getElementById("download-progress");
   const downloadDetailEl = document.getElementById("download-detail");
   const diskPanelEl = document.getElementById("disk-panel");
-  const customDiskFileEl = document.getElementById("custom-disk-file");
-  const uploadDiskBtn = document.getElementById("upload-disk");
-  const clearCustomDiskBtn = document.getElementById("clear-custom-disk");
-  const mountExtraDiskBtn = document.getElementById("mount-extra-disk");
-  const unmountExtraDiskBtn = document.getElementById("unmount-extra-disk");
   const injectDiskFileEl = document.getElementById("inject-disk-file");
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
@@ -58,12 +53,6 @@
   const autoSyncExtraDiskEl = document.getElementById("auto-sync-extra-disk");
   const autoSyncSecondsEl = document.getElementById("auto-sync-seconds");
   const diskStatusEl = document.getElementById("disk-status");
-  const downloadUploadedDiskEl = document.getElementById("download-uploaded-disk");
-  const diskDownloadPromptEl = document.getElementById("disk-download-prompt");
-  const diskDownloadMessageEl = document.getElementById("disk-download-message");
-  const diskDownloadListEl = document.getElementById("disk-download-list");
-  const diskDownloadSelectedBtn = document.getElementById("disk-download-selected");
-  const diskDownloadDismissBtn = document.getElementById("disk-download-dismiss");
   const diskFilesBrowserEl = document.getElementById("disk-files-browser");
   const diskFilesPathEl = document.getElementById("disk-files-path");
   const diskFilesMessageEl = document.getElementById("disk-files-message");
@@ -92,7 +81,6 @@
   let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
   let diskBrowsePath = "/";
-  let diskPromptFiles = [];
   let diskSyncTimer = null;
   let diskSyncInFlight = false;
   const specialKeySerialBytes = {
@@ -168,166 +156,6 @@
       return;
     }
     diskFilesListEl.textContent = "";
-  }
-
-  function setDiskDownloadPromptVisible(visible) {
-    if (!diskDownloadPromptEl) {
-      return;
-    }
-    diskDownloadPromptEl.hidden = !visible;
-  }
-
-  function setDiskDownloadMessage(text) {
-    if (!diskDownloadMessageEl) {
-      return;
-    }
-    diskDownloadMessageEl.textContent = text;
-  }
-
-  function clearDiskDownloadPrompt() {
-    diskPromptFiles = [];
-    if (diskDownloadListEl) {
-      diskDownloadListEl.textContent = "";
-    }
-    setDiskDownloadMessage("No file scan results yet.");
-    setDiskDownloadPromptVisible(false);
-  }
-
-  function triggerDiskFileDownload(path, name) {
-    const link = document.createElement("a");
-    link.href = `/api/upload-disk/file?path=${encodeURIComponent(path)}`;
-    link.download = name || basename(path);
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  function renderDiskDownloadPrompt(files) {
-    if (!diskDownloadPromptEl || !diskDownloadListEl) {
-      return;
-    }
-    diskPromptFiles = Array.isArray(files) ? files.slice() : [];
-    diskDownloadListEl.textContent = "";
-    if (diskPromptFiles.length === 0) {
-      setDiskDownloadMessage("No regular files found in uploaded disk scan.");
-      setDiskDownloadPromptVisible(true);
-      return;
-    }
-
-    setDiskDownloadMessage(`Found ${diskPromptFiles.length} file(s). Select and download.`);
-    for (const file of diskPromptFiles) {
-      const item = document.createElement("li");
-
-      const left = document.createElement("span");
-      left.className = "disk-file-name";
-      left.textContent = file.path || file.name || "unknown";
-      item.appendChild(left);
-
-      const actions = document.createElement("span");
-      actions.className = "disk-file-actions";
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = true;
-      checkbox.setAttribute("data-disk-path", file.path || "");
-      checkbox.setAttribute("data-disk-name", file.name || basename(file.path || ""));
-      actions.appendChild(checkbox);
-
-      const size = document.createElement("span");
-      size.className = "disk-file-meta";
-      size.textContent = Number.isFinite(file.size) ? formatBytes(file.size) : "n/a";
-      actions.appendChild(size);
-
-      const one = document.createElement("button");
-      one.type = "button";
-      one.textContent = "Download";
-      one.addEventListener("click", () => {
-        const path = file.path || "";
-        if (!path) {
-          return;
-        }
-        triggerDiskFileDownload(path, file.name || basename(path));
-      });
-      actions.appendChild(one);
-
-      item.appendChild(actions);
-      diskDownloadListEl.appendChild(item);
-    }
-    setDiskDownloadPromptVisible(true);
-  }
-
-  function downloadSelectedDiskPromptFiles() {
-    if (!diskDownloadListEl) {
-      return;
-    }
-    const checked = Array.from(
-      diskDownloadListEl.querySelectorAll('input[type="checkbox"][data-disk-path]:checked')
-    );
-    if (checked.length === 0) {
-      setDiskDownloadMessage("No files selected.");
-      return;
-    }
-    setDiskDownloadMessage(`Starting ${checked.length} download(s)...`);
-    checked.forEach((input, index) => {
-      const path = input.getAttribute("data-disk-path") || "";
-      const name = input.getAttribute("data-disk-name") || basename(path);
-      if (!path) {
-        return;
-      }
-      window.setTimeout(() => {
-        triggerDiskFileDownload(path, name);
-      }, index * 80);
-    });
-  }
-
-  async function fetchDiskDirectoryEntries(path) {
-    const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(await readResponseError(response));
-    }
-    return response.json();
-  }
-
-  async function scanDiskRegularFiles(maxFiles = 120, maxDirs = 256) {
-    const files = [];
-    const queue = ["/"];
-    const visited = new Set(["/"]);
-    let dirsScanned = 0;
-
-    while (queue.length > 0 && files.length < maxFiles && dirsScanned < maxDirs) {
-      const path = queue.shift();
-      dirsScanned += 1;
-      let payload;
-      try {
-        payload = await fetchDiskDirectoryEntries(path);
-      } catch (err) {
-        continue;
-      }
-      const entries = Array.isArray(payload?.entries) ? payload.entries : [];
-      for (const entry of entries) {
-        if (!entry || typeof entry !== "object") {
-          continue;
-        }
-        if (entry.type === "regular" && typeof entry.path === "string") {
-          files.push({
-            path: entry.path,
-            name: entry.name || basename(entry.path),
-            size: entry.size
-          });
-          if (files.length >= maxFiles) {
-            break;
-          }
-          continue;
-        }
-        if (entry.type === "dir" && typeof entry.path === "string" && !visited.has(entry.path)) {
-          visited.add(entry.path);
-          queue.push(entry.path);
-        }
-      }
-    }
-
-    return files;
   }
 
   function parentDiskPath(path) {
@@ -693,7 +521,7 @@
       applyDiskState(payload);
       diskBrowsePath = "/";
       await loadDiskEntries(diskBrowsePath);
-      setDiskStatus(`extra: synced (${formatBytes(buffer.byteLength)})`);
+      setDiskStatus(`exchange: synced (${formatBytes(buffer.byteLength)})`);
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       if (source !== "auto") {
@@ -726,7 +554,7 @@
     }
     setDiskStatus(`injecting ${file.name} -> ${targetPath}...`);
     try {
-      const response = await fetch(`/api/upload-disk/file?path=${encodeURIComponent(targetPath)}`, {
+      const putFile = () => fetch(`/api/upload-disk/file?path=${encodeURIComponent(targetPath)}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/octet-stream",
@@ -734,8 +562,22 @@
         },
         body: file
       });
+
+      let response = await putFile();
       if (!response.ok) {
-        throw new Error(await readResponseError(response));
+        const firstError = await readResponseError(response);
+        const missingUploadedImage = response.status === 404 && /no uploaded disk image/i.test(firstError);
+        if (!missingUploadedImage) {
+          throw new Error(firstError);
+        }
+        if (!emulator) {
+          throw new Error("exchange disk is not initialized; start VM and run Sync /root to Server once");
+        }
+        await syncExtraDiskToServer("manual");
+        response = await putFile();
+        if (!response.ok) {
+          throw new Error(await readResponseError(response));
+        }
       }
       const payload = await response.json();
       setDiskStatus(`injected ${payload.path} (${formatBytes(payload.size)})`);
@@ -771,26 +613,11 @@
   function disableDiskUploadUi(reason) {
     diskApiAvailable = false;
     stopAutoDiskSync();
-    if (uploadDiskBtn) {
-      uploadDiskBtn.disabled = true;
-    }
-    if (clearCustomDiskBtn) {
-      clearCustomDiskBtn.disabled = true;
-    }
-    if (customDiskFileEl) {
-      customDiskFileEl.disabled = true;
-    }
     if (diskFilesUpBtn) {
       diskFilesUpBtn.disabled = true;
     }
     if (diskFilesRefreshBtn) {
       diskFilesRefreshBtn.disabled = true;
-    }
-    if (mountExtraDiskBtn) {
-      mountExtraDiskBtn.disabled = true;
-    }
-    if (unmountExtraDiskBtn) {
-      unmountExtraDiskBtn.disabled = true;
     }
     if (injectDiskFileEl) {
       injectDiskFileEl.disabled = true;
@@ -811,42 +638,28 @@
     if (autoSyncSecondsEl) {
       autoSyncSecondsEl.disabled = true;
     }
-    if (downloadUploadedDiskEl) {
-      downloadUploadedDiskEl.hidden = true;
-      downloadUploadedDiskEl.removeAttribute("href");
-    }
-    clearDiskDownloadPrompt();
     setDiskFilesVisible(false);
     clearDiskFilesList();
-    setDiskStatus(`upload api unavailable (${reason})`);
+    setDiskStatus(`exchange api unavailable (${reason})`);
   }
 
   function applyDiskState(payload) {
     const data = payload && typeof payload === "object" ? payload : {};
-    clearDiskDownloadPrompt();
     if (data.uploaded === true && typeof data.url === "string" && data.url.length > 0) {
       activeExtraDiskImage = data.url;
       const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
       const name = data.name || diskLabelFromUrl(data.url);
-      setDiskStatus(`extra: custom (${name}${sizeInfo})`);
-      if (downloadUploadedDiskEl) {
-        downloadUploadedDiskEl.href = data.url;
-        downloadUploadedDiskEl.hidden = false;
-      }
+      setDiskStatus(`exchange: custom (${name}${sizeInfo})`);
       setDiskFilesVisible(true);
       return;
     }
     activeExtraDiskImage = defaultExtraDiskImage;
-    if (downloadUploadedDiskEl) {
-      downloadUploadedDiskEl.hidden = true;
-      downloadUploadedDiskEl.removeAttribute("href");
-    }
     diskBrowsePath = "/";
     setDiskFilesPath("/");
-    setDiskFilesMessage("upload a custom ext disk to browse files");
+    setDiskFilesMessage("run Sync /root to Server once to initialize exchange disk browsing");
     clearDiskFilesList();
     setDiskFilesVisible(false);
-    setDiskStatus(`extra: default (${diskLabelFromUrl(defaultExtraDiskImage)})`);
+    setDiskStatus(`exchange: default (${diskLabelFromUrl(defaultExtraDiskImage)})`);
   }
 
   async function resetVmInstance() {
@@ -1100,59 +913,6 @@
     return true;
   }
 
-  function sendSerialText(text) {
-    if (!serialEnabled || typeof text !== "string" || text.length === 0) {
-      return false;
-    }
-    const bytes = [];
-    for (let i = 0; i < text.length; i += 1) {
-      bytes.push(text.charCodeAt(i) & 0xff);
-    }
-    return sendSerialBytes(bytes);
-  }
-
-  function runShellCommand(command, statusLabel) {
-    if (!serialEnabled) {
-      setStatus("serial disabled (cannot send shell commands)");
-      return;
-    }
-    if (!hasRunningVm()) {
-      setStatus("stopped (start VM first)");
-      return;
-    }
-    const cmd = `${command}\n`;
-    if (!sendSerialText(cmd)) {
-      setStatus("serial not ready");
-      return;
-    }
-    if (statusLabel) {
-      setStatus(statusLabel);
-    }
-  }
-
-  function mountExtraDiskFromUi() {
-    const command = [
-      "mkdir -p /root",
-      "&&",
-      "(",
-      "mount -t auto /dev/sdb1 /root 2>/dev/null",
-      "|| mount -t auto /dev/sdb /root 2>/dev/null",
-      "|| mount -t auto /dev/vdb1 /root 2>/dev/null",
-      "|| mount -t auto /dev/vdb /root 2>/dev/null",
-      "|| mount -t auto /dev/hdb1 /root 2>/dev/null",
-      "|| mount -t auto /dev/hdb /root 2>/dev/null",
-      ")",
-      "&& echo '[extra-disk] mounted /root'",
-      "|| echo '[extra-disk] mount failed'"
-    ].join(" ");
-    runShellCommand(command, "requested extra disk mount");
-  }
-
-  function unmountExtraDiskFromUi() {
-    const command = "umount /root 2>/dev/null && echo '[extra-disk] unmounted /root' || echo '[extra-disk] unmount skipped/fail'";
-    runShellCommand(command, "requested extra disk unmount");
-  }
-
   async function sendSpecialKeys(name) {
     if (!hasRunningVm()) {
       setStatus("stopped (start VM first)");
@@ -1347,132 +1107,6 @@
     return emulator;
   }
 
-  async function uploadSelectedDisk() {
-    if (!diskApiAvailable) {
-      setDiskStatus("upload api unavailable");
-      return;
-    }
-    const file = customDiskFileEl?.files?.[0];
-    if (!file) {
-      setDiskStatus("choose a file first");
-      return;
-    }
-    setDiskStatus(`uploading ${file.name} (${formatBytes(file.size)})...`);
-    if (uploadDiskBtn) {
-      uploadDiskBtn.disabled = true;
-    }
-    if (clearCustomDiskBtn) {
-      clearCustomDiskBtn.disabled = true;
-    }
-    if (diskFilesUpBtn) {
-      diskFilesUpBtn.disabled = true;
-    }
-    if (diskFilesRefreshBtn) {
-      diskFilesRefreshBtn.disabled = true;
-    }
-    try {
-      const response = await fetch("/api/upload-disk", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Filename": file.name
-        },
-        body: file
-      });
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      const payload = await response.json();
-      applyDiskState(payload);
-      diskBrowsePath = "/";
-      await loadDiskEntries(diskBrowsePath);
-      try {
-        setDiskDownloadMessage("Scanning uploaded disk for files...");
-        setDiskDownloadPromptVisible(true);
-        const files = await scanDiskRegularFiles();
-        renderDiskDownloadPrompt(files);
-      } catch (scanErr) {
-        const scanMsg = scanErr && scanErr.message ? scanErr.message : String(scanErr);
-        setDiskDownloadMessage(`scan failed (${scanMsg})`);
-        setDiskDownloadPromptVisible(true);
-      }
-      await resetVmInstance();
-      setStatus("idle (custom extra disk uploaded; choose files below to download)");
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      setDiskStatus(`upload failed (${msg})`);
-      console.error(err);
-    } finally {
-      if (uploadDiskBtn) {
-        uploadDiskBtn.disabled = false;
-      }
-      if (clearCustomDiskBtn && diskApiAvailable) {
-        clearCustomDiskBtn.disabled = false;
-      }
-      if (diskFilesUpBtn && diskApiAvailable) {
-        diskFilesUpBtn.disabled = false;
-      }
-      if (diskFilesRefreshBtn && diskApiAvailable) {
-        diskFilesRefreshBtn.disabled = false;
-      }
-    }
-  }
-
-  async function clearCustomDisk() {
-    if (!diskApiAvailable) {
-      applyDiskState({ uploaded: false });
-      clearDiskDownloadPrompt();
-      await resetVmInstance();
-      setStatus("idle (default extra disk)");
-      return;
-    }
-    if (clearCustomDiskBtn) {
-      clearCustomDiskBtn.disabled = true;
-    }
-    if (uploadDiskBtn) {
-      uploadDiskBtn.disabled = true;
-    }
-    if (diskFilesUpBtn) {
-      diskFilesUpBtn.disabled = true;
-    }
-    if (diskFilesRefreshBtn) {
-      diskFilesRefreshBtn.disabled = true;
-    }
-    try {
-      const response = await fetch("/api/upload-disk", {
-        method: "DELETE"
-      });
-      if (!response.ok) {
-        throw new Error(await readResponseError(response));
-      }
-      applyDiskState({ uploaded: false });
-      clearDiskDownloadPrompt();
-      await resetVmInstance();
-      setStatus("idle (default extra disk)");
-      if (customDiskFileEl) {
-        customDiskFileEl.value = "";
-      }
-      setDiskFilesMessage("upload a custom ext disk to browse files");
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      setDiskStatus(`clear failed (${msg})`);
-      console.error(err);
-    } finally {
-      if (clearCustomDiskBtn && diskApiAvailable) {
-        clearCustomDiskBtn.disabled = false;
-      }
-      if (uploadDiskBtn && diskApiAvailable) {
-        uploadDiskBtn.disabled = false;
-      }
-      if (diskFilesUpBtn && diskApiAvailable) {
-        diskFilesUpBtn.disabled = false;
-      }
-      if (diskFilesRefreshBtn && diskApiAvailable) {
-        diskFilesRefreshBtn.disabled = false;
-      }
-    }
-  }
-
   startBtn.addEventListener("click", async () => {
     try {
       await diskStateReady;
@@ -1518,26 +1152,6 @@
     }
   });
 
-  if (uploadDiskBtn) {
-    uploadDiskBtn.addEventListener("click", () => {
-      void uploadSelectedDisk();
-    });
-  }
-  if (clearCustomDiskBtn) {
-    clearCustomDiskBtn.addEventListener("click", () => {
-      void clearCustomDisk();
-    });
-  }
-  if (mountExtraDiskBtn) {
-    mountExtraDiskBtn.addEventListener("click", () => {
-      mountExtraDiskFromUi();
-    });
-  }
-  if (unmountExtraDiskBtn) {
-    unmountExtraDiskBtn.addEventListener("click", () => {
-      unmountExtraDiskFromUi();
-    });
-  }
   if (injectDiskFileBtn) {
     injectDiskFileBtn.addEventListener("click", () => {
       void injectFileIntoExtraDisk();
@@ -1589,16 +1203,6 @@
   if (diskFilesRefreshBtn) {
     diskFilesRefreshBtn.addEventListener("click", () => {
       void loadDiskEntries(diskBrowsePath);
-    });
-  }
-  if (diskDownloadSelectedBtn) {
-    diskDownloadSelectedBtn.addEventListener("click", () => {
-      downloadSelectedDiskPromptFiles();
-    });
-  }
-  if (diskDownloadDismissBtn) {
-    diskDownloadDismissBtn.addEventListener("click", () => {
-      clearDiskDownloadPrompt();
     });
   }
 
