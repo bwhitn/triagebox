@@ -36,6 +36,16 @@
           <button id="clear-custom-disk">Use Default Disk</button>
         </div>
         <p id="disk-status">disk: default</p>
+        <p><a id="download-uploaded-disk" href="#" hidden>Download Uploaded Disk Image</a></p>
+        <div id="disk-files-browser" class="disk-files-browser" hidden>
+          <div class="controls">
+            <button id="disk-files-up" type="button">Up</button>
+            <button id="disk-files-refresh" type="button">Refresh</button>
+            <code id="disk-files-path">/</code>
+          </div>
+          <p id="disk-files-message">Upload a custom ext disk to browse files.</p>
+          <ul id="disk-files-list" class="disk-files-list"></ul>
+        </div>
       </section>
 
       <section class="panel" id="special-keys-panel">

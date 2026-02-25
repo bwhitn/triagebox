@@ -65,6 +65,76 @@ h2 {
   font-size: 0.9rem;
 }
 
+#download-uploaded-disk {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.disk-files-browser {
+  margin-top: 0.7rem;
+  padding: 0.6rem;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+#disk-files-path {
+  background: #edf2f7;
+  border: 1px solid #d9dee5;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+}
+
+#disk-files-message {
+  margin: 0.55rem 0 0.45rem;
+  color: #4a5568;
+  font-size: 0.88rem;
+}
+
+.disk-files-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #d9dee5;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.disk-files-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid #edf2f7;
+}
+
+.disk-files-list li:first-child {
+  border-top: 0;
+}
+
+.disk-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.disk-file-meta {
+  font-size: 0.8rem;
+  color: #718096;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;

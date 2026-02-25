@@ -188,6 +188,8 @@ Buildroot-provided optional dependency report is at `http://localhost:8080/asset
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 The UI also supports uploading a custom disk image to the local server via `POST /api/upload-disk`.
 Uploaded files are stored at `public/uploads/custom-disk.img`.
+When a custom ext disk is uploaded, the UI can browse entries via `GET /api/upload-disk/files?path=/...`
+and download selected files via `GET /api/upload-disk/file?path=/...`.
 
 ### Docker server (Debian trixie-slim)
 

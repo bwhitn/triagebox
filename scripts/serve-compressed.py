@@ -7,14 +7,16 @@ import argparse
 import gzip
 import json
 import os
+import posixpath
 import re
 import shutil
+import subprocess
 import tempfile
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from typing import Iterable, Set
+from typing import Set
 
 
 def parse_ext_list(raw: str) -> Set[str]:
@@ -49,6 +51,10 @@ COMPRESS_LEVEL = env_int("COMPRESS_LEVEL", 6)
 DISK_UPLOAD_MAX_BYTES = env_int("DISK_UPLOAD_MAX_BYTES", 8 * 1024 * 1024 * 1024)
 DISK_UPLOAD_SUBDIR = os.environ.get("DISK_UPLOAD_SUBDIR", "uploads").strip("/") or "uploads"
 DISK_UPLOAD_FILENAME = os.environ.get("DISK_UPLOAD_FILENAME", "custom-disk.img").strip() or "custom-disk.img"
+DISK_BROWSE_MAX_ENTRIES = env_int("DISK_BROWSE_MAX_ENTRIES", 4096)
+DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024)
+DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
+DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
 
 class CompressedStaticHandler(SimpleHTTPRequestHandler):
@@ -56,6 +62,9 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
 
     def _request_path(self) -> str:
         return urlsplit(self.path).path
+
+    def _request_query(self) -> dict[str, list[str]]:
+        return parse_qs(urlsplit(self.path).query, keep_blank_values=True)
 
     def _uploads_dir(self) -> str:
         return os.path.join(self.directory, DISK_UPLOAD_SUBDIR)
@@ -69,6 +78,117 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         base = os.path.basename(value.strip())
         cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
         return cleaned or "uploaded.img"
+
+    def _normalize_disk_path(self, raw_path: str) -> str:
+        value = (raw_path or "").strip()
+        if not value:
+            return "/"
+        if any(ch in value for ch in ("\x00", "\n", "\r")):
+            raise ValueError("invalid path")
+        if not value.startswith("/"):
+            value = "/" + value
+        normalized = posixpath.normpath(value)
+        if not normalized.startswith("/"):
+            raise ValueError("invalid path")
+        return normalized
+
+    def _debugfs_quote(self, raw: str) -> str:
+        escaped = raw.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+
+    def _run_debugfs(self, disk_path: str, command: str) -> str:
+        if not DEBUGFS_BIN:
+            raise RuntimeError("debugfs is not available on the server")
+        proc = subprocess.run(
+            [DEBUGFS_BIN, "-R", command, disk_path],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        combined = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
+        cleaned_lines = []
+        for line in combined.splitlines():
+            line = line.rstrip()
+            if not line:
+                continue
+            if line.startswith("debugfs "):
+                continue
+            cleaned_lines.append(line)
+        if proc.returncode != 0:
+            text = "\n".join(cleaned_lines).strip()
+            raise RuntimeError(text or f"debugfs exited with code {proc.returncode}")
+        return "\n".join(cleaned_lines).strip()
+
+    def _debugfs_type_from_mode(self, mode_raw: str) -> str:
+        try:
+            mode_value = int(mode_raw, 8)
+        except ValueError:
+            return "other"
+        file_type = mode_value & 0o170000
+        if file_type == 0o040000:
+            return "dir"
+        if file_type == 0o100000:
+            return "regular"
+        if file_type == 0o120000:
+            return "symlink"
+        return "other"
+
+    def _debugfs_stat(self, disk_path: str, target_path: str) -> dict:
+        output = self._run_debugfs(disk_path, f"stat {self._debugfs_quote(target_path)}")
+        if "File not found by ext2_lookup" in output or "File not found" in output:
+            raise FileNotFoundError(target_path)
+        type_match = re.search(r"Type:\s+([A-Za-z_]+)", output)
+        size_match = re.search(r"Size:\s+(\d+)", output)
+        mode_match = re.search(r"Mode:\s+([0-7]{4,6})", output)
+        if not type_match:
+            raise RuntimeError("failed to inspect file type in uploaded disk")
+        file_type = type_match.group(1).strip().lower()
+        size = int(size_match.group(1)) if size_match else 0
+        mode = mode_match.group(1) if mode_match else ""
+        return {"type": file_type, "size": size, "mode": mode}
+
+    def _debugfs_list_dir(self, disk_path: str, directory_path: str) -> list[dict]:
+        output = self._run_debugfs(disk_path, f"ls -p {self._debugfs_quote(directory_path)}")
+        if "File not found by ext2_lookup" in output or "File not found" in output:
+            raise FileNotFoundError(directory_path)
+        if "not a directory" in output.lower():
+            raise NotADirectoryError(directory_path)
+
+        entries: list[dict] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line.startswith("/"):
+                continue
+            match = DEBUGFS_LS_RE.match(line)
+            if not match:
+                continue
+            inode_raw, mode_raw, _, _, name, size_raw = match.groups()
+            if name in {".", ".."}:
+                continue
+            entry_type = self._debugfs_type_from_mode(mode_raw)
+            size = int(size_raw) if size_raw.isdigit() else 0
+            if directory_path == "/":
+                full_path = "/" + name
+            else:
+                full_path = directory_path.rstrip("/") + "/" + name
+            entries.append(
+                {
+                    "name": name,
+                    "path": full_path,
+                    "type": entry_type,
+                    "size": size,
+                    "mode": mode_raw,
+                    "inode": int(inode_raw),
+                }
+            )
+
+        entries.sort(key=lambda item: (item["type"] != "dir", item["name"].lower()))
+        if len(entries) > DISK_BROWSE_MAX_ENTRIES:
+            return entries[:DISK_BROWSE_MAX_ENTRIES]
+        return entries
 
     def _send_json(self, status: int, payload: dict, send_body: bool = True) -> None:
         body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -174,6 +294,143 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
                 mtime=int(st.st_mtime),
             ),
         )
+
+    def _handle_get_disk_files(self, send_body: bool = True) -> None:
+        disk_path = self._uploaded_disk_path()
+        if not os.path.isfile(disk_path):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"}, send_body=send_body)
+            return
+        if not DEBUGFS_BIN:
+            self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"}, send_body=send_body)
+            return
+
+        query = self._request_query()
+        requested_path = query.get("path", ["/"])[0]
+        try:
+            normalized_path = self._normalize_disk_path(requested_path)
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid path"}, send_body=send_body)
+            return
+
+        try:
+            entries = self._debugfs_list_dir(disk_path, normalized_path)
+        except FileNotFoundError:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"}, send_body=send_body)
+            return
+        except NotADirectoryError:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "path is not a directory in uploaded disk"},
+                send_body=send_body,
+            )
+            return
+        except RuntimeError as exc:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": f"failed to inspect uploaded disk: {exc}"},
+                send_body=send_body,
+            )
+            return
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "uploaded": True,
+                "path": normalized_path,
+                "entries": entries,
+                "max_entries": DISK_BROWSE_MAX_ENTRIES,
+            },
+            send_body=send_body,
+        )
+
+    def _handle_download_disk_file(self, send_body: bool = True) -> None:
+        disk_path = self._uploaded_disk_path()
+        if not os.path.isfile(disk_path):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"}, send_body=send_body)
+            return
+        if not DEBUGFS_BIN:
+            self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"}, send_body=send_body)
+            return
+
+        query = self._request_query()
+        requested_path = query.get("path", [""])[0]
+        try:
+            normalized_path = self._normalize_disk_path(requested_path)
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid path"}, send_body=send_body)
+            return
+
+        try:
+            stat_info = self._debugfs_stat(disk_path, normalized_path)
+        except FileNotFoundError:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"}, send_body=send_body)
+            return
+        except RuntimeError as exc:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": f"failed to inspect uploaded disk: {exc}"},
+                send_body=send_body,
+            )
+            return
+
+        if stat_info["type"] != "regular":
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "path is not a regular file"},
+                send_body=send_body,
+            )
+            return
+
+        file_size = int(stat_info.get("size", 0))
+        if DISK_FILE_DOWNLOAD_MAX_BYTES > 0 and file_size > DISK_FILE_DOWNLOAD_MAX_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": f"file exceeds download limit ({DISK_FILE_DOWNLOAD_MAX_BYTES} bytes)"},
+                send_body=send_body,
+            )
+            return
+
+        download_name = self._sanitize_filename(os.path.basename(normalized_path)) or "disk-file.bin"
+        if not send_body:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(file_size))
+            self.end_headers()
+            return
+
+        os.makedirs(self._uploads_dir(), exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=".disk-file-", suffix=".bin", dir=self._uploads_dir())
+        os.close(fd)
+        try:
+            debugfs_command = f"dump {self._debugfs_quote(normalized_path)} {self._debugfs_quote(tmp_path)}"
+            output = self._run_debugfs(disk_path, debugfs_command)
+            if "File not found by ext2_lookup" in output or "File not found" in output:
+                raise FileNotFoundError(normalized_path)
+            if not os.path.isfile(tmp_path):
+                raise RuntimeError("debugfs did not produce an output file")
+
+            extracted_size = os.path.getsize(tmp_path)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(extracted_size))
+            self.end_headers()
+
+            with open(tmp_path, "rb") as extracted_file:
+                shutil.copyfileobj(extracted_file, self.wfile, length=64 * 1024)
+        except FileNotFoundError:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "path not found in uploaded disk"})
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to extract file: {exc}"})
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _parse_range(self, range_header: str, file_size: int) -> tuple[int, int] | None:
         value = range_header.strip()
@@ -339,11 +596,23 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=True)
             return
+        if self._request_path() == "/api/upload-disk/files":
+            self._handle_get_disk_files(send_body=True)
+            return
+        if self._request_path() == "/api/upload-disk/file":
+            self._handle_download_disk_file(send_body=True)
+            return
         self._serve(send_body=True)
 
     def do_HEAD(self) -> None:  # noqa: N802
         if self._request_path() == "/api/upload-disk":
             self._handle_get_disk(send_body=False)
+            return
+        if self._request_path() == "/api/upload-disk/files":
+            self._handle_get_disk_files(send_body=False)
+            return
+        if self._request_path() == "/api/upload-disk/file":
+            self._handle_download_disk_file(send_body=False)
             return
         self._serve(send_body=False)
 

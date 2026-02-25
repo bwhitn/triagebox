@@ -50,6 +50,13 @@
   const uploadDiskBtn = document.getElementById("upload-disk");
   const clearCustomDiskBtn = document.getElementById("clear-custom-disk");
   const diskStatusEl = document.getElementById("disk-status");
+  const downloadUploadedDiskEl = document.getElementById("download-uploaded-disk");
+  const diskFilesBrowserEl = document.getElementById("disk-files-browser");
+  const diskFilesPathEl = document.getElementById("disk-files-path");
+  const diskFilesMessageEl = document.getElementById("disk-files-message");
+  const diskFilesListEl = document.getElementById("disk-files-list");
+  const diskFilesUpBtn = document.getElementById("disk-files-up");
+  const diskFilesRefreshBtn = document.getElementById("disk-files-refresh");
 
   const defaultDiskImage = config.diskImage || "assets/buildroot-linux.img";
 
@@ -70,6 +77,7 @@
   let activeDiskImage = defaultDiskImage;
   let diskApiAvailable = true;
   let diskStateReady = Promise.resolve();
+  let diskBrowsePath = "/";
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -115,6 +123,133 @@
       return;
     }
     diskStatusEl.textContent = `disk: ${text}`;
+  }
+
+  function setDiskFilesVisible(visible) {
+    if (!diskFilesBrowserEl) {
+      return;
+    }
+    diskFilesBrowserEl.hidden = !visible;
+  }
+
+  function setDiskFilesPath(path) {
+    if (!diskFilesPathEl) {
+      return;
+    }
+    diskFilesPathEl.textContent = path;
+  }
+
+  function setDiskFilesMessage(text) {
+    if (!diskFilesMessageEl) {
+      return;
+    }
+    diskFilesMessageEl.textContent = text;
+  }
+
+  function clearDiskFilesList() {
+    if (!diskFilesListEl) {
+      return;
+    }
+    diskFilesListEl.textContent = "";
+  }
+
+  function parentDiskPath(path) {
+    if (typeof path !== "string" || path.length === 0 || path === "/") {
+      return "/";
+    }
+    const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
+    const idx = trimmed.lastIndexOf("/");
+    if (idx <= 0) {
+      return "/";
+    }
+    return trimmed.slice(0, idx);
+  }
+
+  function renderDiskEntries(path, entries) {
+    if (!diskFilesListEl) {
+      return;
+    }
+    clearDiskFilesList();
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      setDiskFilesMessage(`no entries in ${path}`);
+      return;
+    }
+
+    setDiskFilesMessage(`showing ${entries.length} entries`);
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const item = document.createElement("li");
+
+      const label = document.createElement("span");
+      label.className = "disk-file-name";
+      const typeLabel = entry.type === "dir" ? "[dir]" : entry.type === "regular" ? "[file]" : "[other]";
+      label.textContent = `${typeLabel} ${entry.name || entry.path || "unknown"}`;
+      item.appendChild(label);
+
+      const actions = document.createElement("span");
+      actions.className = "disk-file-actions";
+
+      const meta = document.createElement("span");
+      meta.className = "disk-file-meta";
+      if (Number.isFinite(entry.size)) {
+        meta.textContent = formatBytes(entry.size);
+      } else {
+        meta.textContent = "n/a";
+      }
+      actions.appendChild(meta);
+
+      if (entry.type === "dir") {
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", () => {
+          if (typeof entry.path === "string" && entry.path.length > 0) {
+            void loadDiskEntries(entry.path);
+          }
+        });
+        actions.appendChild(openBtn);
+      } else if (entry.type === "regular") {
+        const downloadLink = document.createElement("a");
+        downloadLink.textContent = "Download";
+        downloadLink.href = `/api/upload-disk/file?path=${encodeURIComponent(entry.path || "")}`;
+        if (typeof entry.name === "string" && entry.name.length > 0) {
+          downloadLink.setAttribute("download", entry.name);
+        }
+        actions.appendChild(downloadLink);
+      }
+
+      item.appendChild(actions);
+      diskFilesListEl.appendChild(item);
+    }
+  }
+
+  async function loadDiskEntries(path = diskBrowsePath) {
+    if (!diskApiAvailable) {
+      return;
+    }
+    const targetPath = typeof path === "string" && path.length > 0 ? path : "/";
+    setDiskFilesPath(targetPath);
+    setDiskFilesMessage(`loading ${targetPath}...`);
+
+    try {
+      const response = await fetch(`/api/upload-disk/files?path=${encodeURIComponent(targetPath)}`, { cache: "no-store" });
+      if (!response.ok) {
+        const msg = await response.text();
+        throw new Error(msg || `http ${response.status}`);
+      }
+      const payload = await response.json();
+      diskBrowsePath = typeof payload.path === "string" && payload.path.length > 0 ? payload.path : targetPath;
+      setDiskFilesPath(diskBrowsePath);
+      renderDiskEntries(diskBrowsePath, payload.entries);
+      setDiskFilesVisible(true);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setDiskFilesMessage(`browse failed (${msg})`);
+      clearDiskFilesList();
+    }
   }
 
   function isSerialFullscreen() {
@@ -243,6 +378,18 @@
     if (customDiskFileEl) {
       customDiskFileEl.disabled = true;
     }
+    if (diskFilesUpBtn) {
+      diskFilesUpBtn.disabled = true;
+    }
+    if (diskFilesRefreshBtn) {
+      diskFilesRefreshBtn.disabled = true;
+    }
+    if (downloadUploadedDiskEl) {
+      downloadUploadedDiskEl.hidden = true;
+      downloadUploadedDiskEl.removeAttribute("href");
+    }
+    setDiskFilesVisible(false);
+    clearDiskFilesList();
     setDiskStatus(`upload api unavailable (${reason})`);
   }
 
@@ -253,9 +400,23 @@
       const sizeInfo = Number.isFinite(data.size) ? `, ${formatBytes(data.size)}` : "";
       const name = data.name || diskLabelFromUrl(data.url);
       setDiskStatus(`custom (${name}${sizeInfo})`);
+      if (downloadUploadedDiskEl) {
+        downloadUploadedDiskEl.href = data.url;
+        downloadUploadedDiskEl.hidden = false;
+      }
+      setDiskFilesVisible(true);
       return;
     }
     activeDiskImage = defaultDiskImage;
+    if (downloadUploadedDiskEl) {
+      downloadUploadedDiskEl.hidden = true;
+      downloadUploadedDiskEl.removeAttribute("href");
+    }
+    diskBrowsePath = "/";
+    setDiskFilesPath("/");
+    setDiskFilesMessage("upload a custom ext disk to browse files");
+    clearDiskFilesList();
+    setDiskFilesVisible(false);
     setDiskStatus(`default (${diskLabelFromUrl(defaultDiskImage)})`);
   }
 
@@ -302,6 +463,9 @@
       }
       const payload = await response.json();
       applyDiskState(payload);
+      if (payload && payload.uploaded === true) {
+        await loadDiskEntries(diskBrowsePath);
+      }
     } catch (err) {
       disableDiskUploadUi(err && err.message ? err.message : "request failed");
       applyDiskState({ uploaded: false });
@@ -583,11 +747,15 @@
       initrd: { url: config.initrd || "assets/initrd.img" },
       hda: { url: activeDiskImage || defaultDiskImage, async: config.asyncDisk === true },
       cmdline,
+      acpi: false,
       net_device: { type: netDeviceType },
       disable_keyboard: !vgaEnabled,
       disable_mouse: !mouseEnabled,
       disable_cdrom: !cdromEnabled,
       disable_speaker: true,
+      uart1: false,
+      uart2: false,
+      uart3: false,
       boot_order: 0x132,
       autostart: false
     };
@@ -606,14 +774,11 @@
       if (!serialUseXterm || !serialXtermEl) {
         throw new Error("serial mode requires xterm.js assets (run make fetch-v86)");
       }
-      vmOptions.uart1 = true;
       vmOptions.serial_console = {
         type: "xtermjs",
         container: serialXtermEl,
         xterm_lib: xtermCtor
       };
-    } else {
-      vmOptions.uart1 = false;
     }
 
     emulator = new window.V86(vmOptions);
@@ -711,6 +876,12 @@
     if (clearCustomDiskBtn) {
       clearCustomDiskBtn.disabled = true;
     }
+    if (diskFilesUpBtn) {
+      diskFilesUpBtn.disabled = true;
+    }
+    if (diskFilesRefreshBtn) {
+      diskFilesRefreshBtn.disabled = true;
+    }
     try {
       const response = await fetch("/api/upload-disk", {
         method: "POST",
@@ -726,8 +897,10 @@
       }
       const payload = await response.json();
       applyDiskState(payload);
+      diskBrowsePath = "/";
+      await loadDiskEntries(diskBrowsePath);
       await resetVmInstance();
-      setStatus("idle (custom disk uploaded)");
+      setStatus("idle (custom disk uploaded; choose files below to download)");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`upload failed (${msg})`);
@@ -738,6 +911,12 @@
       }
       if (clearCustomDiskBtn && diskApiAvailable) {
         clearCustomDiskBtn.disabled = false;
+      }
+      if (diskFilesUpBtn && diskApiAvailable) {
+        diskFilesUpBtn.disabled = false;
+      }
+      if (diskFilesRefreshBtn && diskApiAvailable) {
+        diskFilesRefreshBtn.disabled = false;
       }
     }
   }
@@ -755,6 +934,12 @@
     if (uploadDiskBtn) {
       uploadDiskBtn.disabled = true;
     }
+    if (diskFilesUpBtn) {
+      diskFilesUpBtn.disabled = true;
+    }
+    if (diskFilesRefreshBtn) {
+      diskFilesRefreshBtn.disabled = true;
+    }
     try {
       const response = await fetch("/api/upload-disk", {
         method: "DELETE"
@@ -769,6 +954,7 @@
       if (customDiskFileEl) {
         customDiskFileEl.value = "";
       }
+      setDiskFilesMessage("upload a custom ext disk to browse files");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`clear failed (${msg})`);
@@ -779,6 +965,12 @@
       }
       if (uploadDiskBtn && diskApiAvailable) {
         uploadDiskBtn.disabled = false;
+      }
+      if (diskFilesUpBtn && diskApiAvailable) {
+        diskFilesUpBtn.disabled = false;
+      }
+      if (diskFilesRefreshBtn && diskApiAvailable) {
+        diskFilesRefreshBtn.disabled = false;
       }
     }
   }
@@ -836,6 +1028,16 @@
   if (clearCustomDiskBtn) {
     clearCustomDiskBtn.addEventListener("click", () => {
       void clearCustomDisk();
+    });
+  }
+  if (diskFilesUpBtn) {
+    diskFilesUpBtn.addEventListener("click", () => {
+      void loadDiskEntries(parentDiskPath(diskBrowsePath));
+    });
+  }
+  if (diskFilesRefreshBtn) {
+    diskFilesRefreshBtn.addEventListener("click", () => {
+      void loadDiskEntries(diskBrowsePath);
     });
   }
 
