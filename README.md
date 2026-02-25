@@ -192,11 +192,13 @@ Missing Buildroot target coverage report is at `http://localhost:8080/assets/bin
 Buildroot root disk remains the primary boot/root disk (`hda`/`/dev/sda`).
 The exchange disk is secondary (`hdb`/`/dev/sdb`) and server-managed at `public/uploads/custom-disk.img`.
 The UI exchange workflow:
-- `Inject File to Extra Disk` writes a single file into the exchange disk via `PUT /api/upload-disk/file?path=/...`
+- `Import Server File to Extra Disk` copies an existing server file into the exchange disk via
+  `POST /api/upload-disk/import?src=assets/example.bin&path=/example.bin`
 - `Sync /root to Server` exports the current VM extra disk buffer back to `public/uploads/custom-disk.img`
 - Optional `Auto Sync` repeats the export on an interval
 - File browser can list and download files with `GET /api/upload-disk/files?path=/...` and `GET /api/upload-disk/file?path=/...`
-When injecting a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
+Server import source root defaults to `public/` and can be changed with `DISK_IMPORT_ROOT`.
+When importing a file while the VM instance already exists, the UI resets the VM instance so the next `Start`
 loads the updated exchange disk image.
 
 ### Docker server (Debian trixie-slim)

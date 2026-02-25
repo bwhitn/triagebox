@@ -54,6 +54,7 @@ DISK_UPLOAD_FILENAME = os.environ.get("DISK_UPLOAD_FILENAME", "custom-disk.img")
 DISK_BROWSE_MAX_ENTRIES = env_int("DISK_BROWSE_MAX_ENTRIES", 4096)
 DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024)
 DISK_FILE_UPLOAD_MAX_BYTES = env_int("DISK_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024)
+DISK_IMPORT_ROOT = os.environ.get("DISK_IMPORT_ROOT", ".").strip() or "."
 DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
 DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
@@ -72,6 +73,9 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
 
     def _uploaded_disk_path(self) -> str:
         return os.path.join(self._uploads_dir(), DISK_UPLOAD_FILENAME)
+
+    def _import_root_dir(self) -> str:
+        return os.path.normpath(os.path.join(self.directory, DISK_IMPORT_ROOT))
 
     def _sanitize_filename(self, value: str) -> str:
         if not value:
@@ -93,15 +97,34 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             raise ValueError("invalid path")
         return normalized
 
+    def _resolve_import_source(self, raw_src: str) -> str:
+        value = (raw_src or "").strip()
+        if not value:
+            raise ValueError("missing src path")
+        if any(ch in value for ch in ("\x00", "\n", "\r")):
+            raise ValueError("invalid src path")
+        normalized_rel = posixpath.normpath("/" + value).lstrip("/")
+        if normalized_rel in {"", "."}:
+            raise ValueError("invalid src path")
+        import_root = os.path.realpath(self._import_root_dir())
+        candidate = os.path.realpath(os.path.join(import_root, normalized_rel))
+        if not (candidate == import_root or candidate.startswith(import_root + os.sep)):
+            raise ValueError("src path escapes import root")
+        return candidate
+
     def _debugfs_quote(self, raw: str) -> str:
         escaped = raw.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
 
-    def _run_debugfs(self, disk_path: str, command: str) -> str:
+    def _run_debugfs(self, disk_path: str, command: str, *, writable: bool = False) -> str:
         if not DEBUGFS_BIN:
             raise RuntimeError("debugfs is not available on the server")
+        argv = [DEBUGFS_BIN]
+        if writable:
+            argv.append("-w")
+        argv.extend(["-R", command, disk_path])
         proc = subprocess.run(
-            [DEBUGFS_BIN, "-R", command, disk_path],
+            argv,
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -127,6 +150,7 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             "while trying to open",
             "couldn't find valid filesystem superblock",
             "short read while trying to open",
+            "filesystem opened read/only",
         )
         if any(marker in lower_text for marker in fatal_markers):
             raise RuntimeError(cleaned_text or "debugfs failed to open filesystem")
@@ -628,13 +652,14 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
 
             # Replace file if already present (ignore errors if it does not exist).
             try:
-                self._run_debugfs(disk_path, f"rm {self._debugfs_quote(normalized_path)}")
+                self._run_debugfs(disk_path, f"rm {self._debugfs_quote(normalized_path)}", writable=True)
             except RuntimeError:
                 pass
 
             self._run_debugfs(
                 disk_path,
                 f"write {self._debugfs_quote(tmp_path)} {self._debugfs_quote(normalized_path)}",
+                writable=True,
             )
 
             self._send_json(
@@ -658,6 +683,73 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
                     os.remove(tmp_path)
             except OSError:
                 pass
+
+    def _handle_import_disk_file(self) -> None:
+        disk_path = self._uploaded_disk_path()
+        if not os.path.isfile(disk_path):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "no uploaded disk image"})
+            return
+        if not DEBUGFS_BIN:
+            self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "debugfs not available"})
+            return
+
+        query = self._request_query()
+        src_raw = query.get("src", [""])[0]
+        dest_raw = query.get("path", [""])[0]
+
+        try:
+            src_path = self._resolve_import_source(src_raw)
+        except ValueError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+
+        if not os.path.isfile(src_path):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "source file not found on server"})
+            return
+
+        file_size = os.path.getsize(src_path)
+        if DISK_FILE_UPLOAD_MAX_BYTES > 0 and file_size > DISK_FILE_UPLOAD_MAX_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": f"source file exceeds size limit ({DISK_FILE_UPLOAD_MAX_BYTES} bytes)"},
+            )
+            return
+
+        if dest_raw.strip():
+            try:
+                dest_path = self._normalize_disk_path(dest_raw)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid destination path"})
+                return
+            if dest_path == "/":
+                dest_path = "/" + os.path.basename(src_path)
+        else:
+            dest_path = "/" + os.path.basename(src_path)
+
+        try:
+            # Replace existing file if it already exists.
+            try:
+                self._run_debugfs(disk_path, f"rm {self._debugfs_quote(dest_path)}", writable=True)
+            except RuntimeError:
+                pass
+            self._run_debugfs(
+                disk_path,
+                f"write {self._debugfs_quote(src_path)} {self._debugfs_quote(dest_path)}",
+                writable=True,
+            )
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to import file into disk: {exc}"})
+            return
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "uploaded": True,
+                "source": os.path.relpath(src_path, self._import_root_dir()),
+                "path": dest_path,
+                "size": file_size,
+            },
+        )
 
     def _parse_range(self, range_header: str, file_size: int) -> tuple[int, int] | None:
         value = range_header.strip()
@@ -846,6 +938,9 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self._request_path() == "/api/upload-disk":
             self._handle_post_disk()
+            return
+        if self._request_path() == "/api/upload-disk/import":
+            self._handle_import_disk_file()
             return
         self.send_error(HTTPStatus.NOT_FOUND, "endpoint not found")
 

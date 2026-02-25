@@ -46,7 +46,7 @@
   const downloadProgressEl = document.getElementById("download-progress");
   const downloadDetailEl = document.getElementById("download-detail");
   const diskPanelEl = document.getElementById("disk-panel");
-  const injectDiskFileEl = document.getElementById("inject-disk-file");
+  const injectServerSrcEl = document.getElementById("inject-server-src");
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
   const syncExtraDiskBtn = document.getElementById("sync-extra-disk");
@@ -542,28 +542,25 @@
       setDiskStatus("inject unavailable (disk api unavailable)");
       return;
     }
-    const file = injectDiskFileEl?.files?.[0];
-    if (!file) {
-      setDiskStatus("choose a file to inject");
+    const src = (injectServerSrcEl?.value || "").trim();
+    if (!src) {
+      setDiskStatus("enter a server file path (e.g. assets/tool.bin)");
       return;
     }
     const requestedPath = (injectDiskPathEl?.value || "").trim();
-    const targetPath = requestedPath.length > 0 ? requestedPath : `/${file.name}`;
+    const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
+    const targetPath = requestedPath.length > 0 ? requestedPath : `/${sourceName}`;
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
     }
-    setDiskStatus(`injecting ${file.name} -> ${targetPath}...`);
+    setDiskStatus(`importing ${src} -> ${targetPath}...`);
     try {
-      const putFile = () => fetch(`/api/upload-disk/file?path=${encodeURIComponent(targetPath)}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "X-Filename": file.name
-        },
-        body: file
-      });
+      const importFile = () => fetch(
+        `/api/upload-disk/import?src=${encodeURIComponent(src)}&path=${encodeURIComponent(targetPath)}`,
+        { method: "POST" }
+      );
 
-      let response = await putFile();
+      let response = await importFile();
       if (!response.ok) {
         const firstError = await readResponseError(response);
         const missingUploadedImage = response.status === 404 && /no uploaded disk image/i.test(firstError);
@@ -574,7 +571,7 @@
           throw new Error("exchange disk is not initialized; start VM and run Sync /root to Server once");
         }
         await syncExtraDiskToServer("manual");
-        response = await putFile();
+        response = await importFile();
         if (!response.ok) {
           throw new Error(await readResponseError(response));
         }
@@ -619,11 +616,14 @@
     if (diskFilesRefreshBtn) {
       diskFilesRefreshBtn.disabled = true;
     }
-    if (injectDiskFileEl) {
-      injectDiskFileEl.disabled = true;
+    if (injectServerSrcEl) {
+      injectServerSrcEl.disabled = true;
     }
     if (injectDiskPathEl) {
       injectDiskPathEl.disabled = true;
+    }
+    if (injectServerSrcEl) {
+      injectServerSrcEl.disabled = true;
     }
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
@@ -1157,18 +1157,19 @@
       void injectFileIntoExtraDisk();
     });
   }
-  if (injectDiskFileEl) {
-    injectDiskFileEl.addEventListener("change", () => {
+  if (injectServerSrcEl) {
+    injectServerSrcEl.addEventListener("change", () => {
       if (!injectDiskPathEl) {
         return;
       }
-      const file = injectDiskFileEl.files?.[0];
-      if (!file) {
+      const src = injectServerSrcEl.value.trim();
+      if (!src) {
         return;
       }
       const current = injectDiskPathEl.value.trim();
       if (current.length === 0) {
-        injectDiskPathEl.value = `/${file.name}`;
+        const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
+        injectDiskPathEl.value = `/${sourceName}`;
       }
     });
   }
