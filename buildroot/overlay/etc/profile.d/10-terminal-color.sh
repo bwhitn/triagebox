@@ -1,45 +1,5 @@
 #!/bin/sh
 
-run_stty() {
-    if command -v stty >/dev/null 2>&1; then
-        stty "$@"
-        return
-    fi
-    if /bin/busybox --list 2>/dev/null | grep -qx "stty"; then
-        /bin/busybox stty "$@"
-        return
-    fi
-    return 127
-}
-
-case "${TERM:-}" in
-    ""|linux|vt100|vt220)
-        export TERM=xterm
-        ;;
-esac
-
-# Some tools crash when terminal width/height resolve to zero.
-if [ -t 0 ]; then
-    set -- $(run_stty size 2>/dev/null || echo "0 0")
-    _rows="$1"
-    _cols="$2"
-    case "${_cols:-}" in
-        ""|*[!0-9]*|0) _cols=120 ;;
-    esac
-    case "${_rows:-}" in
-        ""|*[!0-9]*|0) _rows=40 ;;
-    esac
-    run_stty rows "$_rows" cols "$_cols" opost onlcr 2>/dev/null || true
-    # Let interactive shells rely on ioctl instead of fixed env vars.
-    unset COLUMNS LINES
-else
-    _rows="${LINES:-40}"
-    _cols="${COLUMNS:-120}"
-    export COLUMNS="$_cols"
-    export LINES="$_rows"
-fi
-unset _rows _cols
-
 if [ -n "${PS1:-}" ]; then
     # BusyBox ash line editing/completion can render incorrectly when PS1
     # contains raw ANSI escapes, so keep prompt plain here.
