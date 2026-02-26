@@ -26,7 +26,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` (required)
 - `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
-- For `make build-v86-min`: `git`, `node` (or `nodejs`), `npm`, `java` (OpenJDK), `clang`, `wasm-ld` (from `lld`), `cargo`, `rustc`, and rust target `wasm32-unknown-unknown`
+- For `make build-v86-min`: `git`, `node` (or `nodejs`), `npm`, `java` (OpenJDK), `clang`, `wasm-ld` (from `lld`), `cargo`, `rustc`, and rust target `wasm32-unknown-unknown` (`wasm-opt` from `binaryen` is optional but recommended)
 
 ## Build VM assets
 
@@ -167,8 +167,9 @@ make build-kernel-fast
 - `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
 - `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`; auto-falls back to `install` if no lockfile exists)
 - `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
-- `V86_LEAN_PROFILE` (default `none`; set `serial` to try stripping video/mouse/sound/cdrom/network JS modules during v86 source build)
-- `V86_LEAN_STRICT` (default `0`; with lean profile enabled, `0` falls back to full build when patching/build fails, `1` fails immediately)
+- `V86_WASM_OPT` (default `auto`; `auto` uses `wasm-opt` when available, `1` requires it, `0` disables post-optimization)
+- `V86_WASM_OPT_LEVEL` (default `2`; one of `0`, `1`, `2`, `3`, `4`, `s`, `z`)
+- `V86_WASM_OPT_STRIP_DEBUG` (default `1`; strip debug sections during wasm-opt pass)
 
 Binary-refinery note:
 
@@ -205,8 +206,8 @@ FETCH_VGA_BIOS=1 make fetch-v86
 make build-v86-min
 V86_SRC_DIR=/path/to/v86 make build-v86-min
 V86_BUILD_COMMAND="npm run build" make build-v86-min
-V86_LEAN_PROFILE=serial make build-v86-min
-V86_LEAN_PROFILE=serial V86_LEAN_STRICT=1 make build-v86-min
+V86_WASM_OPT=1 V86_WASM_OPT_LEVEL=s make build-v86-min
+V86_WASM_OPT=0 make build-v86-min
 V86_ASSET_FLAVOR=v86-min make write-build-config
 make use-v86-min
 make use-v86-stock

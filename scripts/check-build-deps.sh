@@ -84,6 +84,10 @@ if [[ "${check_v86_min}" == "1" ]]; then
     need_cmd rustc
     need_node_cmd
     need_rust_wasm_target
+
+    if [[ "${V86_WASM_OPT:-auto}" == "1" ]]; then
+        need_cmd wasm-opt
+    fi
 fi
 
 prefetch_wheels="${PREFETCH_REFINERY_WHEELS:-1}"

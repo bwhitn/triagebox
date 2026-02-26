@@ -11,28 +11,9 @@ V86_GIT_UPDATE="${V86_GIT_UPDATE:-1}"
 V86_NPM_INSTALL="${V86_NPM_INSTALL:-ci}"
 V86_BUILD_COMMAND="${V86_BUILD_COMMAND:-auto}"
 NODE_BIN="${NODE_BIN:-}"
-V86_LEAN_PROFILE="${V86_LEAN_PROFILE:-none}"
-V86_LEAN_STRICT="${V86_LEAN_STRICT:-0}"
-
-V86_MAKEFILE_BACKUP=""
-V86_LEAN_DROP_TOKENS=(
-    "src/vga.js"
-    "src/floppy.js"
-    "src/ps2.js"
-    "src/iso9660.js"
-    "src/ne2k.js"
-    "src/sb16.js"
-    "src/virtio_net.js"
-    "src/browser/screen.js"
-    "src/browser/keyboard.js"
-    "src/browser/mouse.js"
-    "src/browser/speaker.js"
-    "src/browser/network.js"
-    "src/browser/inbrowser_network.js"
-    "src/browser/fake_network.js"
-    "src/browser/wisp_network.js"
-    "src/browser/fetch_network.js"
-)
+V86_WASM_OPT="${V86_WASM_OPT:-auto}"
+V86_WASM_OPT_LEVEL="${V86_WASM_OPT_LEVEL:-2}"
+V86_WASM_OPT_STRIP_DEBUG="${V86_WASM_OPT_STRIP_DEBUG:-1}"
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -100,89 +81,6 @@ resolve_source_dir() {
     echo "${WORK_DIR}"
 }
 
-normalize_lean_profile() {
-    case "${V86_LEAN_PROFILE}" in
-        none|"")
-            V86_LEAN_PROFILE="none"
-            ;;
-        serial|serial-min|min)
-            V86_LEAN_PROFILE="serial"
-            ;;
-        *)
-            echo "Unsupported V86_LEAN_PROFILE: ${V86_LEAN_PROFILE} (expected: none, serial)" >&2
-            exit 1
-            ;;
-    esac
-
-    if [[ "${V86_LEAN_STRICT}" != "0" && "${V86_LEAN_STRICT}" != "1" ]]; then
-        echo "V86_LEAN_STRICT must be 0 or 1 (got: ${V86_LEAN_STRICT})" >&2
-        exit 1
-    fi
-}
-
-backup_makefile() {
-    local src="$1"
-    local mf="${src}/Makefile"
-    if [[ ! -f "${mf}" ]]; then
-        echo "v86 Makefile not found: ${mf}" >&2
-        return 1
-    fi
-    V86_MAKEFILE_BACKUP="$(mktemp "${src}/.makefile.nixbrowser.XXXXXX")"
-    cp -f "${mf}" "${V86_MAKEFILE_BACKUP}"
-}
-
-restore_makefile() {
-    local src="$1"
-    local mf="${src}/Makefile"
-    if [[ -n "${V86_MAKEFILE_BACKUP}" && -f "${V86_MAKEFILE_BACKUP}" ]]; then
-        cp -f "${V86_MAKEFILE_BACKUP}" "${mf}"
-        rm -f "${V86_MAKEFILE_BACKUP}"
-        V86_MAKEFILE_BACKUP=""
-    fi
-}
-
-apply_serial_lean_patch() {
-    local src="$1"
-    local mf="${src}/Makefile"
-    local token
-    local -a unresolved=()
-    local preview
-
-    backup_makefile "${src}" || return 1
-
-    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
-        # Fixed-string replacements only; do not rely on regex semantics.
-        TOKEN="${token}" perl -0pi -e 's/\Q $ENV{TOKEN}\E/ /g; s/\Q\t$ENV{TOKEN}\E/\t/g' "${mf}"
-    done
-
-    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
-        if grep -F -q " ${token}" "${mf}" || grep -F -q "$(printf '\t%s' "${token}")" "${mf}"; then
-            unresolved+=("${token}")
-        fi
-    done
-
-    if ((${#unresolved[@]} > 0)); then
-        echo "Lean patch could not remove module tokens from v86 Makefile:" >&2
-        printf '  %s\n' "${unresolved[@]}" >&2
-        return 1
-    fi
-
-    preview="$(cd "${src}" && make -n build/libv86.js 2>/dev/null || true)"
-    unresolved=()
-    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
-        if grep -F -q "${token}" <<<"${preview}"; then
-            unresolved+=("${token}")
-        fi
-    done
-    if ((${#unresolved[@]} > 0)); then
-        echo "Lean patch did not affect active make recipe for build/libv86.js:" >&2
-        printf '  %s\n' "${unresolved[@]}" >&2
-        return 1
-    fi
-
-    echo "Applied lean v86 module patch profile=${V86_LEAN_PROFILE}"
-}
-
 run_make_build() {
     local src="$1"
     if ! command -v make >/dev/null 2>&1; then
@@ -208,41 +106,8 @@ run_make_build() {
         fi
         return 1
     fi
-
-    local make_failed=0
-    normalize_lean_profile
-    if [[ "${V86_LEAN_PROFILE}" != "none" ]]; then
-        if ! apply_serial_lean_patch "${src}"; then
-            if [[ "${V86_LEAN_STRICT}" == "0" ]]; then
-                echo "Lean patch not applicable; retrying full make build (V86_LEAN_STRICT=0)"
-                restore_makefile "${src}"
-                V86_LEAN_PROFILE="none"
-            else
-                return 1
-            fi
-        fi
-    fi
-
-    echo "Trying make-based v86 build (profile=${V86_LEAN_PROFILE})"
-    if ! (cd "${src}" && make build/libv86.js build/v86.wasm); then
-        make_failed=1
-    fi
-
-    if (( make_failed )) && [[ "${V86_LEAN_PROFILE}" != "none" ]] && [[ "${V86_LEAN_STRICT}" == "0" ]]; then
-        echo "Lean make build failed; retrying full make build (V86_LEAN_STRICT=0)"
-        restore_makefile "${src}"
-        V86_LEAN_PROFILE="none"
-        if ! (cd "${src}" && make build/libv86.js build/v86.wasm); then
-            return 1
-        fi
-        return 0
-    fi
-
-    if (( make_failed )); then
-        return 1
-    fi
-
-    return 0
+    echo "Trying make-based v86 build"
+    (cd "${src}" && make build/libv86.js build/v86.wasm)
 }
 
 run_npm_build() {
@@ -327,10 +192,50 @@ copy_artifacts() {
     fi
 }
 
+optimize_wasm_asset() {
+    local wasm_file="${ASSETS_DIR}/v86.wasm"
+    local level_opt before_size after_size
+
+    if [[ "${V86_WASM_OPT}" != "0" && "${V86_WASM_OPT}" != "1" && "${V86_WASM_OPT}" != "auto" ]]; then
+        echo "V86_WASM_OPT must be 0, 1, or auto (got: ${V86_WASM_OPT})" >&2
+        exit 1
+    fi
+    if [[ ! "${V86_WASM_OPT_LEVEL}" =~ ^(0|1|2|3|4|s|z)$ ]]; then
+        echo "V86_WASM_OPT_LEVEL must be one of: 0,1,2,3,4,s,z (got: ${V86_WASM_OPT_LEVEL})" >&2
+        exit 1
+    fi
+    if [[ "${V86_WASM_OPT_STRIP_DEBUG}" != "0" && "${V86_WASM_OPT_STRIP_DEBUG}" != "1" ]]; then
+        echo "V86_WASM_OPT_STRIP_DEBUG must be 0 or 1 (got: ${V86_WASM_OPT_STRIP_DEBUG})" >&2
+        exit 1
+    fi
+
+    if [[ "${V86_WASM_OPT}" == "0" ]]; then
+        echo "Skipping wasm-opt (V86_WASM_OPT=0)"
+        return 0
+    fi
+    if ! command -v wasm-opt >/dev/null 2>&1; then
+        if [[ "${V86_WASM_OPT}" == "1" ]]; then
+            echo "wasm-opt requested but not found in PATH (install binaryen)" >&2
+            exit 1
+        fi
+        echo "Skipping wasm-opt (not installed; V86_WASM_OPT=auto)"
+        return 0
+    fi
+
+    level_opt="-O${V86_WASM_OPT_LEVEL}"
+    before_size="$(stat -c%s "${wasm_file}")"
+    if [[ "${V86_WASM_OPT_STRIP_DEBUG}" == "1" ]]; then
+        wasm-opt "${level_opt}" --strip-debug "${wasm_file}" -o "${wasm_file}"
+    else
+        wasm-opt "${level_opt}" "${wasm_file}" -o "${wasm_file}"
+    fi
+    after_size="$(stat -c%s "${wasm_file}")"
+    echo "Applied wasm-opt (${level_opt}, strip_debug=${V86_WASM_OPT_STRIP_DEBUG}) ${before_size} -> ${after_size} bytes"
+}
+
 main() {
     local src
     src="$(resolve_source_dir)"
-    trap 'restore_makefile "'"${src}"'"' EXIT
 
     if [[ "${V86_BUILD_COMMAND}" != "auto" ]]; then
         echo "Running custom build command: ${V86_BUILD_COMMAND}"
@@ -344,8 +249,7 @@ main() {
 
     verify_artifacts "${src}"
     copy_artifacts "${src}"
-    restore_makefile "${src}"
-    trap - EXIT
+    optimize_wasm_asset
 
     echo "v86 source: ${src}"
     echo "v86 custom assets written to ${ASSETS_DIR}"
