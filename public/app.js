@@ -22,32 +22,6 @@
     }
     return null;
   })();
-  const xtermKeypadAddonCtor = (() => {
-    const candidates = [
-      window.XtermAddonKeypad,
-      window.XtermKeypadAddon,
-      window.KeypadAddon,
-      window.XtermjsAddonKeypad,
-      window.XtermJsAddonKeypad,
-      window.xtermAddonKeypad,
-      window.xtermjsAddonKeypad
-    ];
-    for (const candidate of candidates) {
-      if (!candidate) {
-        continue;
-      }
-      if (typeof candidate === "function") {
-        return candidate;
-      }
-      if (typeof candidate.KeypadAddon === "function") {
-        return candidate.KeypadAddon;
-      }
-      if (typeof candidate.default === "function") {
-        return candidate.default;
-      }
-    }
-    return null;
-  })();
   const vgaEnabled = config.enableVga === true || (config.enableVga !== false && !serialEnabled);
   const mouseEnabled = config.enableMouse === true;
   const cdromEnabled = config.enableCdrom === true;
@@ -59,15 +33,11 @@
   const serialHintEl = document.getElementById("serial-hint");
   const serialXtermWrapEl = document.getElementById("serial-xterm-wrap");
   const serialXtermEl = document.getElementById("serial-xterm");
-  const serialKeypadEl = document.getElementById("serial-keypad");
   const vgaPanelEl = document.getElementById("vga-panel");
   const serialUseXterm = serialEnabled && !!xtermCtor;
 
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
-  const restartBtn = document.getElementById("restart");
-  const clearSerialBtn = document.getElementById("clear-serial");
-  const serialFullscreenBtn = document.getElementById("serial-fullscreen");
   const downloadPanelEl = document.getElementById("download-panel");
   const downloadStatusEl = document.getElementById("download-status");
   const downloadProgressEl = document.getElementById("download-progress");
@@ -77,8 +47,6 @@
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
   const clearBootImportsBtn = document.getElementById("clear-boot-imports-btn");
-  const rootWatchToggleBtn = document.getElementById("root-watch-toggle");
-  const rootWatchSecondsEl = document.getElementById("root-watch-seconds");
   const rootWatchStatusEl = document.getElementById("root-watch-status");
   const rootWatchListEl = document.getElementById("root-watch-list");
   const diskStatusEl = document.getElementById("disk-status");
@@ -95,7 +63,6 @@
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
   let serialFitAddon = null;
-  let serialKeypadAddon = null;
   let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
@@ -103,7 +70,6 @@
   let diskStateReady = Promise.resolve();
   let bootImports = [];
   let bootImportInFlight = false;
-  let rootWatchEnabled = true;
   let rootWatchTimer = null;
   let rootWatchPending = false;
   let rootWatchKnownNames = new Set();
@@ -116,6 +82,11 @@
   })();
   const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
   const ROOT_SHARE_PREFIX = "/root";
+  const ROOT_WATCH_INTERVAL_MS = (() => {
+    const raw = Number.parseInt(String(config.rootWatchSeconds ?? "3"), 10);
+    const seconds = Number.isFinite(raw) ? Math.max(1, raw) : 3;
+    return seconds * 1000;
+  })();
 
   function setStatus(text) {
     statusEl.textContent = `status: ${text}`;
@@ -139,20 +110,8 @@
     rootWatchStatusEl.textContent = `monitor: ${text}`;
   }
 
-  function updateRootWatchToggleButton() {
-    if (!rootWatchToggleBtn) {
-      return;
-    }
-    rootWatchToggleBtn.textContent = rootWatchEnabled ? "Stop /root Monitor" : "Start /root Monitor";
-  }
-
   function rootWatchIntervalMs() {
-    const raw = Number.parseInt(rootWatchSecondsEl?.value || "3", 10);
-    const seconds = Number.isFinite(raw) ? Math.max(1, raw) : 3;
-    if (rootWatchSecondsEl) {
-      rootWatchSecondsEl.value = String(seconds);
-    }
-    return seconds * 1000;
+    return ROOT_WATCH_INTERVAL_MS;
   }
 
   function parentDiskPath(path) {
@@ -169,13 +128,6 @@
 
   function isSerialFullscreen() {
     return !!serialXtermWrapEl && document.fullscreenElement === serialXtermWrapEl;
-  }
-
-  function updateSerialFullscreenButton() {
-    if (!serialFullscreenBtn) {
-      return;
-    }
-    serialFullscreenBtn.textContent = isSerialFullscreen() ? "Exit Fullscreen" : "Fullscreen";
   }
 
   async function enterSerialFullscreen() {
@@ -204,7 +156,6 @@
       } else {
         await enterSerialFullscreen();
       }
-      updateSerialFullscreenButton();
       scheduleSerialFit();
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
@@ -300,37 +251,6 @@
       throw new Error("invalid server source path");
     }
     return value.startsWith("/") ? value : `/${value}`;
-  }
-
-  function tryAttachKeypadUi(addon) {
-    const host = serialKeypadEl || serialXtermWrapEl || null;
-    if (!addon || !host) {
-      return false;
-    }
-
-    const attachers = ["open", "attach", "mount", "render"];
-    for (const name of attachers) {
-      if (typeof addon[name] !== "function") {
-        continue;
-      }
-      try {
-        addon[name](host);
-        return true;
-      } catch (err) {
-        console.warn(`keypad addon ${name}() failed`, err);
-      }
-    }
-
-    if (typeof addon.show === "function") {
-      try {
-        addon.show();
-        return true;
-      } catch (err) {
-        console.warn("keypad addon show() failed", err);
-      }
-    }
-
-    return false;
   }
 
   function hasFilesystemBridge() {
@@ -570,11 +490,9 @@
         const size = await stageImportIntoRunningVm(srcPath, targetPath);
         setDiskStatus(`imported to running VM (${formatBytes(size)}); current boot only`);
         setStatus("running (one-shot import applied)");
-        if (rootWatchEnabled) {
-          window.setTimeout(() => {
-            requestRootWatchScan();
-          }, 500);
-        }
+        window.setTimeout(() => {
+          requestRootWatchScan();
+        }, 500);
       } else {
         upsertBootImport(srcPath, targetPath);
         setDiskStatus(`queued for next boot only (${bootImports.length} staged import(s))`);
@@ -602,15 +520,8 @@
       if (clearBootImportsBtn) {
         clearBootImportsBtn.disabled = true;
       }
-      if (rootWatchToggleBtn) {
-        rootWatchToggleBtn.disabled = true;
-      }
-      if (rootWatchSecondsEl) {
-        rootWatchSecondsEl.disabled = true;
-      }
       setDiskStatus("root exchange disabled in vm-config");
       setRootWatchStatus("disabled");
-      updateRootWatchToggleButton();
       return;
     }
     if (injectDiskFileBtn) {
@@ -619,22 +530,11 @@
     if (clearBootImportsBtn) {
       clearBootImportsBtn.disabled = false;
     }
-    if (rootWatchToggleBtn) {
-      rootWatchToggleBtn.disabled = false;
-    }
-    if (rootWatchSecondsEl) {
-      rootWatchSecondsEl.disabled = false;
-    }
     rootWatchKnownNames = new Set();
     if (rootWatchListEl) {
       rootWatchListEl.textContent = "";
     }
-    updateRootWatchToggleButton();
-    if (rootWatchEnabled) {
-      setRootWatchStatus("waiting for VM start...");
-    } else {
-      setRootWatchStatus("idle");
-    }
+    setRootWatchStatus("waiting for VM start...");
     if (bootImports.length > 0) {
       setDiskStatus(`one-shot boot imports queued: ${bootImports.length}`);
     } else {
@@ -878,7 +778,7 @@
 
   function refreshRootWatchPolling() {
     stopRootWatchPolling();
-    if (!rootWatchEnabled || !hasRunningVm()) {
+    if (!hasRunningVm()) {
       return;
     }
     rootWatchTimer = window.setInterval(() => {
@@ -887,7 +787,7 @@
   }
 
   function requestRootWatchScan() {
-    if (!rootWatchEnabled || !hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
+    if (!hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
       return;
     }
     if (Date.now() < rootWatchStatusHoldUntil) {
@@ -979,31 +879,10 @@
       rootWatchStatusHoldUntil = Date.now() + 7000;
     } finally {
       rootDownloadInFlight = false;
-      if (rootWatchEnabled) {
-        window.setTimeout(() => {
-          requestRootWatchScan();
-        }, 250);
-      }
+      window.setTimeout(() => {
+        requestRootWatchScan();
+      }, 250);
     }
-  }
-
-  function startRootMonitor() {
-    rootWatchEnabled = true;
-    updateRootWatchToggleButton();
-    if (!hasRunningVm()) {
-      setRootWatchStatus("waiting for VM start...");
-      return;
-    }
-    setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
-    refreshRootWatchPolling();
-    requestRootWatchScan();
-  }
-
-  function stopRootMonitor() {
-    rootWatchEnabled = false;
-    updateRootWatchToggleButton();
-    stopRootWatchPolling();
-    setRootWatchStatus("idle");
   }
 
   function ensureEmulator() {
@@ -1117,16 +996,6 @@
             console.warn("failed to load xterm fit addon", err);
           }
         }
-        if (!serialKeypadAddon && xtermKeypadAddonCtor && term && typeof term.loadAddon === "function") {
-          try {
-            serialKeypadAddon = new xtermKeypadAddonCtor({ container: serialKeypadEl || undefined });
-            term.loadAddon(serialKeypadAddon);
-            tryAttachKeypadUi(serialKeypadAddon);
-          } catch (err) {
-            serialKeypadAddon = null;
-            console.warn("failed to load xterm keypad addon", err);
-          }
-        }
         scheduleSerialFit();
         if (term && typeof term.attachCustomKeyEventHandler === "function") {
           term.attachCustomKeyEventHandler((event) => {
@@ -1175,13 +1044,11 @@
       if (rootWatchListEl) {
         rootWatchListEl.textContent = "";
       }
-      if (rootWatchEnabled) {
-        setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
-        refreshRootWatchPolling();
-        window.setTimeout(() => {
-          requestRootWatchScan();
-        }, 1500);
-      }
+      setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
+      refreshRootWatchPolling();
+      window.setTimeout(() => {
+        requestRootWatchScan();
+      }, 1500);
     });
 
     emulator.add_listener("emulator-stopped", () => {
@@ -1193,9 +1060,7 @@
         rootWatchListEl.textContent = "";
       }
       rootDownloadInFlight = false;
-      if (rootWatchEnabled) {
-        setRootWatchStatus("waiting for VM start...");
-      }
+      setRootWatchStatus("waiting for VM start...");
     });
 
     return emulator;
@@ -1236,19 +1101,6 @@
     await emulator.stop();
   });
 
-  restartBtn.addEventListener("click", () => {
-    if (!emulator) {
-      return;
-    }
-    emulator.restart();
-  });
-
-  clearSerialBtn.addEventListener("click", () => {
-    if (emulator?.serial_adapter?.term?.clear) {
-      emulator.serial_adapter.term.clear();
-    }
-  });
-
   if (injectDiskFileBtn) {
     injectDiskFileBtn.addEventListener("click", () => {
       void importServerFileIntoVmRoot();
@@ -1275,25 +1127,8 @@
       clearBootImports();
     });
   }
-  if (rootWatchToggleBtn) {
-    rootWatchToggleBtn.addEventListener("click", () => {
-      if (rootWatchEnabled) {
-        stopRootMonitor();
-      } else {
-        startRootMonitor();
-      }
-    });
-  }
-  if (rootWatchSecondsEl) {
-    rootWatchSecondsEl.addEventListener("change", () => {
-      if (rootWatchEnabled) {
-        refreshRootWatchPolling();
-        setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
-      }
-    });
-  }
-  if (serialFullscreenBtn) {
-    serialFullscreenBtn.addEventListener("click", () => {
+  if (serialXtermWrapEl) {
+    serialXtermWrapEl.addEventListener("dblclick", () => {
       void toggleSerialFullscreen();
     });
   }
@@ -1304,10 +1139,8 @@
     if (serialHintEl) {
       if (!serialUseXterm) {
         serialHintEl.textContent = "xterm.js missing; run make fetch-v86.";
-      } else if (xtermKeypadAddonCtor) {
-        serialHintEl.textContent = "Serial backend: xterm.js with keypad addon.";
       } else {
-        serialHintEl.textContent = "Serial backend: xterm.js (keypad addon unavailable).";
+        serialHintEl.textContent = "Serial backend: xterm.js (interactive). Double-click terminal to toggle fullscreen.";
       }
     }
   }
@@ -1320,14 +1153,11 @@
   }
 
   document.addEventListener("fullscreenchange", () => {
-    updateSerialFullscreenButton();
     scheduleSerialFit();
   });
   document.addEventListener("webkitfullscreenchange", () => {
-    updateSerialFullscreenButton();
     scheduleSerialFit();
   });
-  updateSerialFullscreenButton();
 
   setStatus("idle");
 })();

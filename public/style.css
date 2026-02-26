@@ -51,10 +51,6 @@ h2 {
   margin: 0;
 }
 
-#serial-fullscreen {
-  white-space: nowrap;
-}
-
 #inject-server-src {
   max-width: 100%;
 }
@@ -159,11 +155,17 @@ button:hover {
 
 .download-panel {
   display: none;
-  margin-top: 0.7rem;
   padding: 0.55rem 0.65rem;
   border: 1px solid #d9dee5;
   border-radius: 8px;
-  background: #f8fafc;
+  background: rgba(248, 250, 252, 0.95);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  max-width: min(440px, calc(100% - 1rem));
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 8;
+  backdrop-filter: blur(2px);
 }
 
 .download-panel.active {
@@ -216,35 +218,8 @@ button:hover {
   overflow-y: auto !important;
 }
 
-#serial-keypad {
-  margin-top: 0.55rem;
-}
-
-#serial-keypad:empty {
-  display: none;
-}
-
-.xterm-keypad {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.xterm-keypad-btn {
-  border: 1px solid #3b4452;
-  background: #f3f6fb;
-  color: #121417;
-  border-radius: 6px;
-  padding: 0.32rem 0.55rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.xterm-keypad-btn:hover {
-  background: #e4ebf4;
-}
-
 #screen_container {
+  position: relative;
   width: 100%;
   overflow: auto;
   border: 1px solid #252c36;

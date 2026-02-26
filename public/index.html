@@ -15,16 +15,9 @@
         <div class="controls">
           <button id="start">Start</button>
           <button id="stop">Stop</button>
-          <button id="restart">Restart</button>
-          <button id="clear-serial">Clear Serial</button>
         </div>
         <p id="status">status: idle</p>
         <p id="ips">instructions/sec: n/a</p>
-        <div class="download-panel" id="download-panel">
-          <p id="download-status">download: idle</p>
-          <progress id="download-progress" max="100" value="0"></progress>
-          <p id="download-detail">waiting to start</p>
-        </div>
       </section>
 
       <section class="panel" id="disk-panel">
@@ -36,10 +29,6 @@
           <button id="inject-disk-file-btn" type="button">Stage Non-Persistent Boot Import</button>
           <button id="clear-boot-imports-btn" type="button">Clear Staged Imports</button>
         </div>
-        <div class="controls">
-          <button id="root-watch-toggle" type="button">Start /root Monitor</button>
-          <input id="root-watch-seconds" type="number" min="1" value="3" title="Monitor interval (seconds)">
-        </div>
         <p id="disk-status">disk: non-persistent import mode</p>
         <p id="root-watch-status">monitor: idle</p>
         <ul id="root-watch-list" class="disk-files-list"></ul>
@@ -48,18 +37,21 @@
       <section class="panel" id="serial-panel">
         <div class="panel-header">
           <h2>Serial Console</h2>
-          <button type="button" id="serial-fullscreen">Fullscreen</button>
         </div>
         <p id="serial-hint">Click inside the serial console and type to interact with the guest shell.</p>
         <div id="serial-xterm-wrap">
           <div id="serial-xterm"></div>
         </div>
-        <div id="serial-keypad"></div>
       </section>
 
       <section class="panel" id="vga-panel">
         <h2>VGA Output</h2>
         <div id="screen_container">
+          <div class="download-panel" id="download-panel">
+            <p id="download-status">download: idle</p>
+            <progress id="download-progress" max="100" value="0"></progress>
+            <p id="download-detail">waiting to start</p>
+          </div>
           <div id="screen"></div>
         </div>
       </section>
@@ -68,7 +60,6 @@
 
     <script src="assets/xterm/xterm.js"></script>
     <script src="assets/xterm/xterm-addon-fit.js"></script>
-    <script src="assets/xterm/xterm-addon-keypad.js"></script>
     <script src="vm-config.js"></script>
     <script src="build-config.js"></script>
     <script>
