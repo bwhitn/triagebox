@@ -243,8 +243,8 @@ define PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 			mv "$$src" "$$dst"; \
 			chmod 0755 "$$dst"; \
 			if [ "$$optimize" = "1" ] && [ -f "$$dst" ] && \
-				head -n1 "$$dst" | grep -Eq '^#!.*/python([0-9.]*)?$$'; then \
-				$(SED) '1s@^#!.*python[0-9.]*$$@#!/usr/bin/python -O@' "$$dst"; \
+				head -n1 "$$dst" | grep -Eq '^#!.*python([0-9.]*)?([[:space:]].*)?$$'; then \
+				$(SED) '1s@^#!.*$$@#!/usr/bin/python -O@' "$$dst"; \
 			fi; \
 		done; \
 		rmdir "$$tmpdir" 2>/dev/null || true; \

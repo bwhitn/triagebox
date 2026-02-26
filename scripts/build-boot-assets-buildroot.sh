@@ -49,6 +49,7 @@ LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar
 INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
 BUILDROOT_ONLY="${BUILDROOT_ONLY:-all}" # all|kernel
 FORCE_TARGET_FINALIZE="${FORCE_TARGET_FINALIZE:-1}" # 0|1, force overlay/finalize refresh on resume
+FORCE_REFINERY_REINSTALL="${FORCE_REFINERY_REINSTALL:-1}" # 0|1, force python-binary-refinery target reinstall
 
 EXTRA_MB="${EXTRA_MB:-8}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
@@ -112,6 +113,10 @@ if [[ "${PYTHON_MODULE_FORMAT}" != "pyc" ]] && [[ "${PYTHON_MODULE_FORMAT}" != "
 fi
 if [[ "${FORCE_TARGET_FINALIZE}" != "0" ]] && [[ "${FORCE_TARGET_FINALIZE}" != "1" ]]; then
     echo "FORCE_TARGET_FINALIZE must be 0 or 1 (got: ${FORCE_TARGET_FINALIZE})" >&2
+    exit 1
+fi
+if [[ "${FORCE_REFINERY_REINSTALL}" != "0" ]] && [[ "${FORCE_REFINERY_REINSTALL}" != "1" ]]; then
+    echo "FORCE_REFINERY_REINSTALL must be 0 or 1 (got: ${FORCE_REFINERY_REINSTALL})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -789,6 +794,15 @@ else
             "${OUT_DIR}/build/buildroot-fs/.stamp_target_installed" \
             "${OUT_DIR}/build/buildroot-fs/.stamp_images_installed" \
             2>/dev/null || true
+    fi
+    if [[ "${FORCE_REFINERY_REINSTALL}" == "1" ]]; then
+        # Ensure python-binary-refinery post-install hooks re-run on resume builds.
+        # This keeps script patching (e.g. shebang optimization and runtime guards)
+        # in sync with the current repository state.
+        for stamp in "${OUT_DIR}"/build/python-binary-refinery-*/.stamp_target_installed; do
+            [ -e "${stamp}" ] || continue
+            rm -f "${stamp}" 2>/dev/null || true
+        done
     fi
     echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
     make -C "${BUILDROOT_SRC}" \
