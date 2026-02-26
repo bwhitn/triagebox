@@ -7,7 +7,64 @@ if [ "$(id -u)" -eq 0 ]; then
     [ -d /root ] || mkdir -p /root
 fi
 
-cd "${HOME:-/}" 2>/dev/null || cd /
+is_root_share_mounted() {
+    grep -qs ' /root 9p ' /proc/mounts
+}
+
+discover_root_share_tag() {
+    for tag_path in /sys/bus/virtio/drivers/9pnet_virtio/virtio*/mount_tag /sys/bus/virtio/devices/virtio*/mount_tag; do
+        [ -r "$tag_path" ] || continue
+        tag_name="$(tr -d '\r\n' < "$tag_path" 2>/dev/null || true)"
+        if [ -n "$tag_name" ]; then
+            echo "$tag_name"
+            return 0
+        fi
+    done
+    echo "host9p"
+    return 0
+}
+
+try_mount_root_share_once() {
+    tag_name="$(discover_root_share_tag)"
+    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 "$tag_name" /root 2>/dev/null && return 0
+    mount -t 9p -o trans=virtio,version=9p2000.L "$tag_name" /root 2>/dev/null && return 0
+    mount -t 9p "$tag_name" /root 2>/dev/null && return 0
+    if [ "$tag_name" != "host9p" ]; then
+        mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null && return 0
+        mount -t 9p host9p /root 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+wait_for_root_share_mount() {
+    if is_root_share_mounted; then
+        return 0
+    fi
+
+    if [ -x /etc/init.d/S40root9p ]; then
+        /etc/init.d/S40root9p start >/dev/null 2>&1 || true
+    fi
+
+    i=0
+    while [ "$i" -lt 30 ]; do
+        if is_root_share_mounted; then
+            return 0
+        fi
+        try_mount_root_share_once >/dev/null 2>&1 || true
+        if is_root_share_mounted; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 0.2
+    done
+    return 1
+}
+
+if wait_for_root_share_mount; then
+    cd "${HOME:-/}" 2>/dev/null || cd /
+else
+    cd /
+fi
 
 # Show login banner/motd once per shell spawn.
 if [ -r /etc/motd ]; then
