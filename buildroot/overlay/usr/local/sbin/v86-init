@@ -53,27 +53,51 @@ set_term_dimensions() {
 set_term_dimensions
 
 mount_root_share() {
+    is_root_share_mounted() {
+        grep -qs ' /root 9p ' /proc/mounts
+    }
+
+    mount_root_share_once() {
+        mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null && return 0
+        mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null && return 0
+        mount -t 9p host9p /root 2>/dev/null && return 0
+        return 1
+    }
+
     mkdir -p /root
     # Virtio-9p device can appear slightly after init starts; retry briefly.
-    attempts=40
+    attempts=20
     while [ "$attempts" -gt 0 ]; do
-        if mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null; then
+        if is_root_share_mounted; then
             echo "Mounted host9p on /root"
             return 0
         fi
-        if mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null; then
-            echo "Mounted host9p on /root"
-            return 0
-        fi
-        if mount -t 9p host9p /root 2>/dev/null; then
+        if mount_root_share_once; then
             echo "Mounted host9p on /root"
             return 0
         fi
         attempts=$((attempts - 1))
         sleep 0.25
     done
-    echo "Warning: failed to mount host9p on /root" >&2
-    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root || true
+
+    # Keep retrying in background so /root auto-attaches once host9p is ready.
+    (
+        bg_attempts=0
+        while [ "$bg_attempts" -lt 300 ]; do
+            if is_root_share_mounted; then
+                exit 0
+            fi
+            if mount_root_share_once; then
+                echo "Mounted host9p on /root (background)"
+                exit 0
+            fi
+            bg_attempts=$((bg_attempts + 1))
+            sleep 1
+        done
+        echo "Warning: failed to mount host9p on /root after background retries" >&2
+    ) &
+
+    echo "Info: host9p not ready during early boot; retrying in background"
     return 1
 }
 
