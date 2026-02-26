@@ -82,6 +82,11 @@
   let rootWatchKnownNames = new Set();
   let rootWatchStatusHoldUntil = 0;
   let rootDownloadInFlight = false;
+  const ROOT_SHARE_TOTAL_BYTES = (() => {
+    const raw = Number.parseInt(String(config.rootExchangeSizeMb ?? "1024"), 10);
+    const mb = Number.isFinite(raw) ? Math.max(64, raw) : 1024;
+    return mb * 1024 * 1024;
+  })();
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -309,6 +314,23 @@
       typeof emulator.create_file === "function" &&
       typeof emulator.read_file === "function"
     );
+  }
+
+  function applyRootShareTotalSize() {
+    if (!rootExchangeEnabled) {
+      return;
+    }
+    const fs = emulator?.fs9p;
+    if (!fs || typeof fs !== "object") {
+      return;
+    }
+    if (!Number.isFinite(ROOT_SHARE_TOTAL_BYTES) || ROOT_SHARE_TOTAL_BYTES <= 0) {
+      return;
+    }
+    fs.total_size = ROOT_SHARE_TOTAL_BYTES;
+    if (Number.isFinite(fs.used_size) && fs.used_size > fs.total_size) {
+      fs.total_size = fs.used_size;
+    }
   }
 
   function toRootSharePath(targetPath) {
@@ -1073,6 +1095,7 @@
     }
 
     emulator = new window.V86(vmOptions);
+    applyRootShareTotalSize();
 
     emulator.add_listener("download-progress", (info) => {
       handleDownloadProgress(info);
@@ -1083,6 +1106,7 @@
     });
 
     emulator.add_listener("emulator-ready", () => {
+      applyRootShareTotalSize();
       setStatus("ready");
       completeDownloadMeter();
       setupSerialResizeHandling();
@@ -1138,6 +1162,7 @@
     });
 
     emulator.add_listener("emulator-started", () => {
+      applyRootShareTotalSize();
       setStatus("running");
       startSampling();
       rootWatchKnownNames = new Set();

@@ -1,2 +1,6 @@
 Buildroot Linux for v86
 Built from Buildroot (qemu_x86 profile)
+
+Root exchange:
+- Files injected from the web UI appear in /root (9p mount may take a few seconds).
+- Any files you save under /root can be downloaded from the web UI /root monitor.

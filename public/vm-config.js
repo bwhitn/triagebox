@@ -26,6 +26,8 @@ window.V86_VM_CONFIG = {
   // networkRelayUrl: "wss://relay.widgetry.org/",
   // Enable host<->guest non-persistent /root exchange over virtio-9p.
   enableRootExchange: true,
+  // Exposed size of the host 9p share mounted at /root (default 1 GiB).
+  rootExchangeSizeMb: 1024,
   // Optional VGA knobs when enableVga=true.
   // vgaMemoryMb: 8,
   // vgaBios: "assets/v86/vgabios.bin",
