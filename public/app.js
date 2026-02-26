@@ -59,6 +59,7 @@
   const serialHintEl = document.getElementById("serial-hint");
   const serialXtermWrapEl = document.getElementById("serial-xterm-wrap");
   const serialXtermEl = document.getElementById("serial-xterm");
+  const serialKeypadEl = document.getElementById("serial-keypad");
   const vgaPanelEl = document.getElementById("vga-panel");
   const serialUseXterm = serialEnabled && !!xtermCtor;
 
@@ -299,6 +300,37 @@
       throw new Error("invalid server source path");
     }
     return value.startsWith("/") ? value : `/${value}`;
+  }
+
+  function tryAttachKeypadUi(addon) {
+    const host = serialKeypadEl || serialXtermWrapEl || null;
+    if (!addon || !host) {
+      return false;
+    }
+
+    const attachers = ["open", "attach", "mount", "render"];
+    for (const name of attachers) {
+      if (typeof addon[name] !== "function") {
+        continue;
+      }
+      try {
+        addon[name](host);
+        return true;
+      } catch (err) {
+        console.warn(`keypad addon ${name}() failed`, err);
+      }
+    }
+
+    if (typeof addon.show === "function") {
+      try {
+        addon.show();
+        return true;
+      } catch (err) {
+        console.warn("keypad addon show() failed", err);
+      }
+    }
+
+    return false;
   }
 
   function hasFilesystemBridge() {
@@ -1087,8 +1119,9 @@
         }
         if (!serialKeypadAddon && xtermKeypadAddonCtor && term && typeof term.loadAddon === "function") {
           try {
-            serialKeypadAddon = new xtermKeypadAddonCtor();
+            serialKeypadAddon = new xtermKeypadAddonCtor({ container: serialKeypadEl || undefined });
             term.loadAddon(serialKeypadAddon);
+            tryAttachKeypadUi(serialKeypadAddon);
           } catch (err) {
             serialKeypadAddon = null;
             console.warn("failed to load xterm keypad addon", err);

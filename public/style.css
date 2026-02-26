@@ -216,6 +216,34 @@ button:hover {
   overflow-y: auto !important;
 }
 
+#serial-keypad {
+  margin-top: 0.55rem;
+}
+
+#serial-keypad:empty {
+  display: none;
+}
+
+.xterm-keypad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.xterm-keypad-btn {
+  border: 1px solid #3b4452;
+  background: #f3f6fb;
+  color: #121417;
+  border-radius: 6px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.xterm-keypad-btn:hover {
+  background: #e4ebf4;
+}
+
 #screen_container {
   width: 100%;
   overflow: auto;

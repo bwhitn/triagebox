@@ -153,13 +153,135 @@ fetch_xterm_keypad_addon() {
         return 0
     fi
 
-    echo "Warning: unable to fetch xterm keypad addon; writing stub ${dest}" >&2
+    echo "Warning: unable to fetch xterm keypad addon; writing local compatibility addon ${dest}" >&2
     cat >"${XTERM_DIR}/${dest}" <<'EOF'
 ;(function(global){
     if (!global) {
         return;
     }
-    global.__XTERM_KEYPAD_ADDON_MISSING__ = true;
+    function sendInput(term, text) {
+        if (!term || typeof text !== "string" || text.length === 0) {
+            return;
+        }
+        if (typeof term.input === "function") {
+            term.input(text, true);
+            return;
+        }
+        if (term._core && term._core.coreService && typeof term._core.coreService.triggerDataEvent === "function") {
+            term._core.coreService.triggerDataEvent(text, true);
+        }
+    }
+
+    function createButton(doc, label, text, title, termRef) {
+        var btn = doc.createElement("button");
+        btn.type = "button";
+        btn.className = "xterm-keypad-btn";
+        btn.textContent = label;
+        if (title) {
+            btn.title = title;
+        }
+        btn.addEventListener("click", function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (typeof termRef.get === "function") {
+                sendInput(termRef.get(), text);
+            }
+        });
+        return btn;
+    }
+
+    function KeypadAddon(options) {
+        this._options = options || {};
+        this._terminal = null;
+        this._root = null;
+        this._host = null;
+    }
+
+    KeypadAddon.prototype.activate = function(term) {
+        this._terminal = term || null;
+        var host = this._options.container || null;
+        if (!host && term && term.element && term.element.parentElement) {
+            host = term.element.parentElement;
+        }
+        if (host) {
+            this.open(host);
+        }
+    };
+
+    KeypadAddon.prototype.dispose = function() {
+        if (this._root && this._root.parentNode) {
+            this._root.parentNode.removeChild(this._root);
+        }
+        this._root = null;
+        this._host = null;
+        this._terminal = null;
+    };
+
+    KeypadAddon.prototype.open = function(host) {
+        if (!host || !host.ownerDocument) {
+            return;
+        }
+        if (this._root && this._host === host) {
+            return;
+        }
+        if (this._root && this._root.parentNode) {
+            this._root.parentNode.removeChild(this._root);
+        }
+
+        var doc = host.ownerDocument;
+        var root = doc.createElement("div");
+        root.className = "xterm-keypad";
+
+        var termRef = {
+            get: function() {
+                return this._terminal;
+            }.bind(this)
+        };
+
+        var keys = [
+            ["Ctrl+C", "\x03", "Interrupt"],
+            ["Ctrl+D", "\x04", "EOF"],
+            ["Ctrl+Z", "\x1a", "Suspend"],
+            ["Ctrl+L", "\x0c", "Clear"],
+            ["Esc", "\x1b", ""],
+            ["Tab", "\x09", ""],
+            ["Up", "\x1b[A", ""],
+            ["Down", "\x1b[B", ""],
+            ["Left", "\x1b[D", ""],
+            ["Right", "\x1b[C", ""],
+            ["PgUp", "\x1b[5~", ""],
+            ["PgDn", "\x1b[6~", ""]
+        ];
+
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            root.appendChild(createButton(doc, k[0], k[1], k[2], termRef));
+        }
+
+        host.appendChild(root);
+        this._host = host;
+        this._root = root;
+    };
+
+    KeypadAddon.prototype.attach = KeypadAddon.prototype.open;
+    KeypadAddon.prototype.mount = KeypadAddon.prototype.open;
+    KeypadAddon.prototype.render = KeypadAddon.prototype.open;
+    KeypadAddon.prototype.show = function() {
+        if (this._root) {
+            this._root.style.display = "flex";
+        }
+    };
+    KeypadAddon.prototype.hide = function() {
+        if (this._root) {
+            this._root.style.display = "none";
+        }
+    };
+
+    global.XtermAddonKeypad = global.XtermAddonKeypad || {};
+    global.XtermAddonKeypad.KeypadAddon = KeypadAddon;
+    if (!global.KeypadAddon) {
+        global.KeypadAddon = KeypadAddon;
+    }
 })(typeof window !== "undefined" ? window : this);
 EOF
 }
