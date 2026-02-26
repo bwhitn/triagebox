@@ -73,6 +73,29 @@ define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT
 endef
 PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT
 
+# importlib.resources is surprisingly expensive during startup in this target
+# environment. binary-refinery resources are always on a normal filesystem path
+# here, so replace datapath() with a direct Path-based fast path.
+define PYTHON_BINARY_REFINERY_PATCH_RESOURCES_FASTPATH
+	resources_py="$(@D)/refinery/lib/resources.py"; \
+	if [ -f "$$resources_py" ] && ! grep -q '__NIXBROWSER_RESOURCES_FASTPATH__' "$$resources_py"; then \
+		printf '%s\n' \
+			'"""A wrapper module to read local data resources."""' \
+			'from __future__ import annotations' \
+			'' \
+			'from pathlib import Path' \
+			'' \
+			"_DATA_DIR = Path(__file__).resolve().parent.parent / '\''data'\''" \
+			'' \
+			'' \
+			'def datapath(name: str):' \
+			'    # __NIXBROWSER_RESOURCES_FASTPATH__' \
+			'    return _DATA_DIR / name' \
+			> "$$resources_py"; \
+	fi
+endef
+PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_PATCH_RESOURCES_FASTPATH
+
 define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
 	tools_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/lib/tools.py"; \
 	if [ -f "$$tools_py" ] && \
