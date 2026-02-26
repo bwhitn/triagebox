@@ -68,7 +68,7 @@ need_cmd() {
     }
 }
 
-for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf; do
+for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf python3; do
     need_cmd "$cmd"
 done
 
@@ -145,6 +145,58 @@ fi
 if [[ "${BUILDROOT_CCACHE}" == "1" ]]; then
     mkdir -p "${BUILDROOT_CCACHE_DIR}"
 fi
+
+generate_refinery_units_cache() {
+    local tree_root="$1"
+    local pkg_dir site_dir data_dir units_file bindir map_file ep_file version py_cmd
+
+    pkg_dir="$(find "${tree_root}/usr/lib" -maxdepth 4 -type d -path '*/site-packages/refinery' -print -quit 2>/dev/null || true)"
+    if [[ -z "${pkg_dir}" ]]; then
+        return 0
+    fi
+
+    site_dir="$(dirname "${pkg_dir}")"
+    data_dir="${pkg_dir}/data"
+    units_file="${data_dir}/units.pkl"
+    bindir="${tree_root}/usr/bin"
+    version="${BINARY_REFINERY_VERSION}"
+    map_file="$(mktemp "${WORK_DIR}/refinery-units-map.XXXXXX")"
+    : > "${map_file}"
+
+    ep_file="$(find "${site_dir}" -maxdepth 2 -type f \( \
+        -path '*/binary_refinery-*.dist-info/entry_points.txt' -o \
+        -path '*/binary_refinery-*.egg-info/entry_points.txt' -o \
+        -path '*/binary_refinery.egg-info/entry_points.txt' \
+    \) -print -quit 2>/dev/null || true)"
+
+    if [[ -n "${ep_file}" ]] && [[ -f "${ep_file}" ]]; then
+        sed -n 's/^[[:space:]]*[^=[:space:]]\+[[:space:]]*=[[:space:]]*\(refinery\.units[^:[:space:]]*\):\([A-Za-z_][A-Za-z0-9_]*\)\.run[[:space:]]*$/\2\t\1/p' "${ep_file}" > "${map_file}" || true
+    fi
+
+    if [[ ! -s "${map_file}" ]] && [[ -d "${bindir}" ]]; then
+        for script in "${bindir}"/*; do
+            [[ -f "${script}" ]] || continue
+            entry="$(sed -n 's/^from \(refinery\.units[^ ]*\) import \([A-Za-z_][A-Za-z0-9_]*\)$/\2\t\1/p' "${script}" | head -n1)"
+            [[ -n "${entry}" ]] || continue
+            printf '%s\n' "${entry}" >> "${map_file}"
+        done
+    fi
+
+    if [[ -s "${map_file}" ]]; then
+        mkdir -p "${data_dir}"
+        py_cmd="${OUT_DIR}/host/bin/python3"
+        if [[ ! -x "${py_cmd}" ]]; then
+            py_cmd="$(command -v python3)"
+        fi
+        "${py_cmd}" -c "import pathlib,pickle,sys; m=pathlib.Path(sys.argv[1]); o=pathlib.Path(sys.argv[2]); v=sys.argv[3]; u={}; [u.setdefault((p:=l.split('\t',1))[0], p[1]) for l in m.read_text(encoding='utf-8', errors='ignore').splitlines() if '\t' in l]; o.write_bytes(pickle.dumps({'units':u,'version':v}, protocol=4))" "${map_file}" "${units_file}" "${version}"
+        chmod 0644 "${units_file}" 2>/dev/null || true
+        echo "Generated binary-refinery unit cache: ${units_file}"
+    else
+        echo "Warning: unable to derive binary-refinery entry map; units cache not generated." >&2
+    fi
+
+    rm -f "${map_file}"
+}
 
 if [[ ! -d "${BUILDROOT_SRC}" ]]; then
     echo "[1/8] Downloading Buildroot ${BUILDROOT_VERSION}"
@@ -919,6 +971,7 @@ fi
 rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}"
 tar -xf "${ROOTFS_TAR}" -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
+generate_refinery_units_cache "${EXPORT_DIR}"
 rm -rf "${EXPORT_DIR}/dev"
 mkdir -p "${EXPORT_DIR}/dev" "${EXPORT_DIR}/proc" "${EXPORT_DIR}/sys" "${EXPORT_DIR}/run" "${EXPORT_DIR}/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp"

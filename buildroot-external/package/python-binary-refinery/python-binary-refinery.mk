@@ -226,8 +226,12 @@ define PYTHON_BINARY_REFINERY_GENERATE_UNITS_CACHE
 	datadir="$$pkgdir/data"; \
 	cache="$$datadir/units.pkl"; \
 	mapfile="$(@D)/.units-map.tsv"; \
-	epfile="$$(ls "$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages"/binary_refinery-*.dist-info/entry_points.txt 2>/dev/null | head -n1 || true)"; \
-	version="$$(sed -n "s/^__version__ = '\\(.*\\)'/\\1/p" "$$pkgdir/__init__.py" | head -n1)"; \
+	epfile="$$(find "$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages" -maxdepth 2 -type f \( \
+		-path "*/binary_refinery-*.dist-info/entry_points.txt" -o \
+		-path "*/binary_refinery-*.egg-info/entry_points.txt" -o \
+		-path "*/binary_refinery.egg-info/entry_points.txt" \
+	\) | head -n1 || true)"; \
+	version="$(PYTHON_BINARY_REFINERY_VERSION)"; \
 	mkdir -p "$$datadir"; \
 	rm -f "$$mapfile"; \
 	if [ -f "$$epfile" ]; then \
