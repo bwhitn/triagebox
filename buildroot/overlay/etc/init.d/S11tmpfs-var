@@ -13,8 +13,8 @@ case "$1" in
             if grep -qs ' /var ' /proc/mounts; then
                 umount /var 2>/dev/null || true
             fi
-            mount -t tmpfs -o mode=0755,nosuid,nodev,size="${TMPFS_VAR_SIZE:-64m}" tmpfs /var 2>/dev/null \
-                || mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /var 2>/dev/null \
+            mount -t tmpfs -o mode=0755,nosuid,nodev,noatime,size="${TMPFS_VAR_SIZE:-64m}" tmpfs /var 2>/dev/null \
+                || mount -t tmpfs -o mode=0755,nosuid,nodev,noatime tmpfs /var 2>/dev/null \
                 || true
         fi
 

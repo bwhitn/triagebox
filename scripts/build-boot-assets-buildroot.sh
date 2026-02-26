@@ -934,15 +934,21 @@ export PATH=/bin:/sbin
 root_dev=""
 root_fstype=""
 root_mount_mode="ro"
+root_mount_extra_opts="noatime"
 for arg in $(/bin/busybox cat /proc/cmdline); do
     case "$arg" in
         root=*) root_dev="${arg#root=}" ;;
         rootfstype=*) root_fstype="${arg#rootfstype=}" ;;
+        rootflags=*) root_mount_extra_opts="${root_mount_extra_opts},${arg#rootflags=}" ;;
         rw) root_mount_mode="rw" ;;
         ro) root_mount_mode="ro" ;;
     esac
 done
 [ -n "$root_dev" ] || root_dev="/dev/sda"
+root_mount_opts="${root_mount_mode}"
+if [ -n "$root_mount_extra_opts" ]; then
+    root_mount_opts="${root_mount_opts},${root_mount_extra_opts}"
+fi
 
 i=0
 while [ $i -lt 50 ]; do
@@ -952,9 +958,9 @@ while [ $i -lt 50 ]; do
 done
 
 if [ -n "$root_fstype" ]; then
-    /bin/busybox mount -t "$root_fstype" -o "$root_mount_mode" "$root_dev" /newroot
+    /bin/busybox mount -t "$root_fstype" -o "$root_mount_opts" "$root_dev" /newroot
 else
-    /bin/busybox mount -o "$root_mount_mode" "$root_dev" /newroot
+    /bin/busybox mount -o "$root_mount_opts" "$root_dev" /newroot
 fi
 
 /bin/busybox mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run

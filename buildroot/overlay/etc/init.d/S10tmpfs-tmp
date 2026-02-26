@@ -16,8 +16,8 @@ case "$1" in
             umount /tmp 2>/dev/null || true
         fi
 
-        mount -t tmpfs -o mode=1777,nosuid,nodev,size="${TMPFS_TMP_SIZE:-256m}" tmpfs /tmp 2>/dev/null \
-            || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null \
+        mount -t tmpfs -o mode=1777,nosuid,nodev,noatime,size="${TMPFS_TMP_SIZE:-256m}" tmpfs /tmp 2>/dev/null \
+            || mount -t tmpfs -o mode=1777,nosuid,nodev,noatime tmpfs /tmp 2>/dev/null \
             || true
         chmod 1777 /tmp 2>/dev/null || true
         ;;

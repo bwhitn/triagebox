@@ -1032,7 +1032,7 @@
       ? config.rootDevice.trim()
       : "/dev/sda";
     const cdromBlacklist = cdromEnabled ? "" : " modprobe.blacklist=sr_mod,cdrom";
-    const defaultCmdlineBase = `root=${rootDevice} rootfstype=${rootFsType} ro rootwait ip=off net.ifnames=0 mitigations=off${cdromBlacklist}`;
+    const defaultCmdlineBase = `root=${rootDevice} rootfstype=${rootFsType} rootflags=noatime ro rootwait ip=off net.ifnames=0 mitigations=off${cdromBlacklist}`;
     const defaultCmdlineNoSerial = `${defaultCmdlineBase} console=tty0`;
     const defaultCmdlineSerial = vgaEnabled
       ? `${defaultCmdlineBase} console=ttyS0 console=tty0`

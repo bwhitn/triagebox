@@ -108,6 +108,32 @@ define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
 
+# Keep command startup predictable: do not auto-trigger full entry-point reload
+# scans when the on-disk unit cache is missing/stale. The generated units.pkl
+# is the fast path, and explicit reload can still be requested by tooling.
+define PYTHON_BINARY_REFINERY_PATCH_LAZY_UNITS_TARGET
+	init_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/__init__.py"; \
+	tmp_py="$(@D)/.__refinery_init_lazy.tmp"; \
+	if [ -f "$$init_py" ] && ! grep -q '__NIXBROWSER_REFINERY_LAZY_CACHE__' "$$init_py"; then \
+		awk ' \
+			/^        if cache is None:$$/ { \
+				print $$0; \
+				if (getline line > 0 && line ~ /^            self\\.reload\\(\\)$$/) { \
+					print "            # __NIXBROWSER_REFINERY_LAZY_CACHE__"; \
+					print "            self.loaded = True"; \
+					print "            return"; \
+					next; \
+				} \
+				if (line != "") { print line; } \
+				next; \
+			} \
+			{ print $$0; } \
+		' "$$init_py" > "$$tmp_py"; \
+		mv "$$tmp_py" "$$init_py"; \
+	fi
+endef
+PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH_LAZY_UNITS_TARGET
+
 define PYTHON_BINARY_REFINERY_PREPARE_SCRIPT_STAGING
 	rm -rf $(@D)/.scripts
 	mkdir -p $(@D)/.scripts
