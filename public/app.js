@@ -80,6 +80,7 @@
   let rootWatchTimer = null;
   let rootWatchPending = false;
   let rootWatchKnownNames = new Set();
+  let rootWatchStatusHoldUntil = 0;
   let rootDownloadInFlight = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
@@ -840,6 +841,9 @@
     if (!rootWatchEnabled || !hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
       return;
     }
+    if (Date.now() < rootWatchStatusHoldUntil) {
+      return;
+    }
     if (!hasFilesystemBridge()) {
       setRootWatchStatus("filesystem bridge not ready");
       return;
@@ -919,13 +923,17 @@
       const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
       const zipSize = await downloadEncryptedZip(name || "root-file.bin", bytes);
       setRootWatchStatus(`downloaded ${name} as zip (${formatBytes(zipSize)})`);
+      rootWatchStatusHoldUntil = Date.now() + 5000;
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setRootWatchStatus(`download failed (${msg})`);
+      rootWatchStatusHoldUntil = Date.now() + 7000;
     } finally {
       rootDownloadInFlight = false;
       if (rootWatchEnabled) {
-        requestRootWatchScan();
+        window.setTimeout(() => {
+          requestRootWatchScan();
+        }, 250);
       }
     }
   }
