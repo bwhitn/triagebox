@@ -83,6 +83,10 @@ run_make_build() {
     if ! command -v make >/dev/null 2>&1; then
         return 1
     fi
+    if ! command -v java >/dev/null 2>&1; then
+        echo "Skipping make-based v86 build: java not found"
+        return 1
+    fi
     echo "Trying make-based v86 build"
     (cd "${src}" && make build/libv86.js build/v86.wasm)
 }
@@ -90,6 +94,7 @@ run_make_build() {
 run_npm_build() {
     local src="$1"
     local pkg="${src}/package.json"
+    local install_mode="${V86_NPM_INSTALL}"
     resolve_node_bin
     need_cmd npm
     [[ -f "${pkg}" ]] || {
@@ -97,7 +102,12 @@ run_npm_build() {
         return 1
     }
 
-    case "${V86_NPM_INSTALL}" in
+    if [[ "${install_mode}" == "ci" ]] && [[ ! -f "${src}/package-lock.json" ]] && [[ ! -f "${src}/npm-shrinkwrap.json" ]]; then
+        echo "No npm lockfile found; switching from npm ci to npm install"
+        install_mode="install"
+    fi
+
+    case "${install_mode}" in
         ci)
             echo "Running npm ci"
             (cd "${src}" && npm ci)
@@ -107,7 +117,7 @@ run_npm_build() {
             (cd "${src}" && npm install)
             ;;
         skip)
-            echo "Skipping npm dependency install (V86_NPM_INSTALL=skip)"
+            echo "Skipping npm dependency install (V86_NPM_INSTALL=${V86_NPM_INSTALL})"
             ;;
         *)
             echo "Unsupported V86_NPM_INSTALL value: ${V86_NPM_INSTALL}" >&2

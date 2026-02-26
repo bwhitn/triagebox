@@ -165,7 +165,7 @@ make build-kernel-fast
 - `V86_REF` (default `master`; git ref/branch for v86 source clone/update)
 - `V86_GIT_UPDATE` (default `1`; set to `0` to skip updating an existing v86 source checkout)
 - `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
-- `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`)
+- `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`; auto-falls back to `install` if no lockfile exists)
 - `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
 
 Binary-refinery note:
