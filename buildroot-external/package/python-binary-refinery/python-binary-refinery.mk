@@ -220,4 +220,33 @@ define PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 
+define PYTHON_BINARY_REFINERY_GENERATE_UNITS_CACHE
+	bindir="$(TARGET_DIR)/usr/bin"; \
+	pkgdir="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery"; \
+	datadir="$$pkgdir/data"; \
+	cache="$$datadir/units.pkl"; \
+	mapfile="$(@D)/.units-map.tsv"; \
+	epfile="$$(ls "$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages"/binary_refinery-*.dist-info/entry_points.txt 2>/dev/null | head -n1 || true)"; \
+	version="$$(sed -n "s/^__version__ = '\\(.*\\)'/\\1/p" "$$pkgdir/__init__.py" | head -n1)"; \
+	mkdir -p "$$datadir"; \
+	rm -f "$$mapfile"; \
+	if [ -f "$$epfile" ]; then \
+		sed -n "s/^[[:space:]]*[^=[:space:]]\\+[[:space:]]*=[[:space:]]*\\(refinery\\.units[^:[:space:]]*\\):\\([A-Za-z_][A-Za-z0-9_]*\\)\\.run[[:space:]]*$$/\\2\\t\\1/p" "$$epfile" > "$$mapfile"; \
+	fi; \
+	if [ ! -s "$$mapfile" ] && [ -d "$$bindir" ]; then \
+		for script in "$$bindir"/*; do \
+			[ -f "$$script" ] || continue; \
+			entry="$$(sed -n "s/^from \\(refinery\\.units[^ ]*\\) import \\([A-Za-z_][A-Za-z0-9_]*\\)$$/\\2\\t\\1/p" "$$script" | head -n1)"; \
+			[ -n "$$entry" ] || continue; \
+			printf '%s\n' "$$entry" >> "$$mapfile"; \
+		done; \
+	fi; \
+	if [ -s "$$mapfile" ] && [ -n "$$version" ]; then \
+		$(HOST_DIR)/bin/python3 -c "import pathlib,pickle,sys; m=pathlib.Path(sys.argv[1]); o=pathlib.Path(sys.argv[2]); v=sys.argv[3]; u={}; [u.setdefault((p:=l.split('\t',1))[0], p[1]) for l in m.read_text(encoding='utf-8', errors='ignore').splitlines() if '\t' in l]; o.write_bytes(pickle.dumps({'units':u,'version':v}, protocol=4))" "$$mapfile" "$$cache" "$$version"; \
+		chmod 0644 "$$cache"; \
+	fi; \
+	rm -f "$$mapfile"
+endef
+PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_GENERATE_UNITS_CACHE
+
 $(eval $(python-package))
