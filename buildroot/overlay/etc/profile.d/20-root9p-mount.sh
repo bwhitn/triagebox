@@ -1,8 +1,8 @@
 #!/bin/sh
 
-# Interactive-shell fallback: mount host 9p share at /root.
-# This runs when /etc/profile is sourced (ash login shell).
-if [ -n "${PS1:-}" ] && ! grep -qs ' /root 9p ' /proc/mounts; then
+# Shell startup fallback: mount host 9p share at /root.
+# This runs when /etc/profile is sourced.
+if ! grep -qs ' /root 9p ' /proc/mounts; then
     mkdir -p /root 2>/dev/null || true
 
     if command -v modprobe >/dev/null 2>&1; then
@@ -23,12 +23,18 @@ if [ -n "${PS1:-}" ] && ! grep -qs ' /root 9p ' /proc/mounts; then
     done
     [ -n "$_root9p_tag" ] || _root9p_tag="host9p"
 
-    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 "$_root9p_tag" /root 2>/dev/null \
-        || mount -t 9p -o trans=virtio,version=9p2000.L "$_root9p_tag" /root 2>/dev/null \
-        || mount -t 9p "$_root9p_tag" /root 2>/dev/null \
-        || {
-            [ "$_root9p_tag" = "host9p" ] \
-                || mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null \
-                || mount -t 9p host9p /root 2>/dev/null
-        }
+    _root9p_i=0
+    while [ "$_root9p_i" -lt 8 ] && ! grep -qs ' /root 9p ' /proc/mounts; do
+        mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 "$_root9p_tag" /root 2>/dev/null \
+            || mount -t 9p -o trans=virtio,version=9p2000.L "$_root9p_tag" /root 2>/dev/null \
+            || mount -t 9p "$_root9p_tag" /root 2>/dev/null \
+            || {
+                [ "$_root9p_tag" = "host9p" ] \
+                    || mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null \
+                    || mount -t 9p host9p /root 2>/dev/null
+            }
+        grep -qs ' /root 9p ' /proc/mounts && break
+        _root9p_i=$((_root9p_i + 1))
+        sleep 1
+    done
 fi

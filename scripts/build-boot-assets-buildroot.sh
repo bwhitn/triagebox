@@ -427,7 +427,7 @@ BR2_PACKAGE_PYTHON_BINARY_REFINERY=y
 BR2_PACKAGE_QPDF11=y
 # BR2_PACKAGE_QPDF is not set
 BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
-BR2_TARGET_GENERIC_GETTY_OPTIONS="-n -l /bin/sh"
+BR2_TARGET_GENERIC_GETTY_OPTIONS="-n -l /bin/sh -l"
 BR2_SYSTEM_DHCP=""
 EOF
 printf '%s\n' "${buildroot_parallel_config}" >> "${OUT_DIR}/.config"
