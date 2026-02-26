@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build build-resume build-fast build-kernel-fast preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve clean
+.PHONY: build build-resume build-fast build-kernel-fast preflight fetch-v86 build-v86-min use-v86-stock use-v86-min build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve clean
 
 build: fetch-v86 build-disk
 
@@ -19,6 +19,16 @@ preflight:
 
 fetch-v86: preflight
 	./scripts/fetch-v86-assets.sh
+
+build-v86-min:
+	./scripts/build-v86-min-assets.sh
+	V86_ASSET_FLAVOR=v86-min ./scripts/write-build-config.sh
+
+use-v86-stock:
+	./scripts/write-build-config.sh
+
+use-v86-min:
+	V86_ASSET_FLAVOR=v86-min ./scripts/write-build-config.sh
 
 build-disk: preflight
 	./scripts/build-boot-assets-buildroot.sh
@@ -59,6 +69,6 @@ docker-serve:
 clean:
 	rm -rf .work
 	rm -f public/assets/buildroot-linux.img public/assets/default-extra.img public/assets/debian-trixie.img public/assets/vmlinuz public/assets/initrd.img public/assets/boot-image-info.txt public/assets/buildroot-legal-info.tar.gz public/assets/binary-refinery-missing-wheels.txt public/assets/binary-refinery-buildroot-provided.txt public/assets/binary-refinery-missing-buildroot-packages.txt
-	rm -rf public/assets/v86 public/assets/xterm
+	rm -rf public/assets/v86 public/assets/v86-min public/assets/xterm
 	mkdir -p public/assets
 	touch public/assets/.gitkeep

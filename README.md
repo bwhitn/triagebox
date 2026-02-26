@@ -16,6 +16,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `scripts/build-boot-assets-buildroot.sh`: builds guest artifacts (`buildroot-linux.img`, `vmlinuz`, `initrd.img`)
 - `scripts/write-build-config.sh`: writes build-time UI flags
 - `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, and xterm assets (VGA BIOS optional)
+- `scripts/build-v86-min-assets.sh`: builds v86 assets from source into `public/assets/v86-min/`
 - `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
 
@@ -25,6 +26,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` (required)
 - `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
+- `git`, `node`, `npm` (only required for `make build-v86-min`)
 
 ## Build VM assets
 
@@ -47,6 +49,24 @@ This does:
 4. Create `public/assets/buildroot-linux.img` (ext2)
 5. Copy kernel/initramfs to `public/assets/vmlinuz` and `public/assets/initrd.img`
 6. Write `public/build-config.js`
+
+Build v86 from source and switch frontend config to the source-built assets:
+
+```bash
+make build-v86-min
+```
+
+Switch frontend config back to downloaded stock v86 assets:
+
+```bash
+make use-v86-stock
+```
+
+Switch frontend config to already-built source assets without rebuilding:
+
+```bash
+make use-v86-min
+```
 
 Build just the disk/kernel/initrd artifacts:
 
@@ -139,6 +159,13 @@ make build-kernel-fast
 - `ROOTFS_RESERVED_BLOCKS_PERCENT` (default `0`; ext2 reserved blocks percentage used by `mke2fs`)
 - `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
 - `FETCH_VGA_BIOS` (default `0`; set `1` only when you enable VGA output)
+- `V86_ASSET_FLAVOR` (default `v86`; set to `v86-min` to use source-built v86 assets in `public/assets/v86-min`)
+- `V86_SRC_DIR` (optional local path to v86 source checkout used by `make build-v86-min`)
+- `V86_REPO_URL` (default `https://github.com/copy/v86.git`; used by `make build-v86-min` when `V86_SRC_DIR` is unset)
+- `V86_REF` (default `master`; git ref/branch for v86 source clone/update)
+- `V86_GIT_UPDATE` (default `1`; set to `0` to skip updating an existing v86 source checkout)
+- `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
+- `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`)
 
 Binary-refinery note:
 
@@ -172,6 +199,12 @@ PYTHON_MODULE_FORMAT=pyc make build-disk
 PREFETCH_DOWNLOADS=0 make build-disk
 PREFETCH_REFINERY_WHEELS=0 make build-disk
 FETCH_VGA_BIOS=1 make fetch-v86
+make build-v86-min
+V86_SRC_DIR=/path/to/v86 make build-v86-min
+V86_BUILD_COMMAND="npm run build" make build-v86-min
+V86_ASSET_FLAVOR=v86-min make write-build-config
+make use-v86-min
+make use-v86-stock
 REFINERY_REQUIRE_BUILDROOT_TARGET=1 make build-disk
 REFINERY_REQUIRE_BUILDROOT_TARGET=0 make build-disk
 REFINERY_SDIST_FALLBACK=0 make build-disk

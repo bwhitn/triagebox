@@ -87,11 +87,42 @@
 
     </main>
 
-    <script src="assets/v86/libv86.js"></script>
     <script src="assets/xterm/xterm.js"></script>
     <script src="assets/xterm/xterm-addon-fit.js"></script>
     <script src="vm-config.js"></script>
     <script src="build-config.js"></script>
-    <script src="app.js"></script>
+    <script>
+      (function () {
+        const merged = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
+        const assetFlavor = typeof merged.v86AssetFlavor === "string" && merged.v86AssetFlavor.trim().length > 0
+          ? merged.v86AssetFlavor.trim()
+          : "v86";
+        const libPath = typeof merged.libv86Path === "string" && merged.libv86Path.trim().length > 0
+          ? merged.libv86Path.trim()
+          : ("assets/" + assetFlavor + "/libv86.js");
+
+        function loadScript(src, onload, onerror) {
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = onload || null;
+          script.onerror = onerror || null;
+          document.body.appendChild(script);
+        }
+
+        loadScript(
+          libPath,
+          function () {
+            loadScript("app.js");
+          },
+          function () {
+            const statusEl = document.getElementById("status");
+            if (statusEl) {
+              statusEl.textContent = "status: error (failed to load " + libPath + ")";
+            }
+            console.error("failed to load v86 runtime:", libPath);
+          }
+        );
+      })();
+    </script>
   </body>
 </html>

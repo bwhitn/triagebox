@@ -1017,7 +1017,7 @@
 
     if (typeof window.V86 !== "function") {
       setStatus("error (libv86.js missing)");
-      throw new Error("V86 constructor not found. Did you run make fetch-v86?");
+      throw new Error("V86 constructor not found. Did you run make fetch-v86 or make build-v86-min?");
     }
 
     setStatus("loading");
