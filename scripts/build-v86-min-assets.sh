@@ -87,8 +87,20 @@ run_make_build() {
     command -v java >/dev/null 2>&1 || missing_tools+=("java")
     command -v clang >/dev/null 2>&1 || missing_tools+=("clang")
     command -v wasm-ld >/dev/null 2>&1 || missing_tools+=("wasm-ld")
+    command -v cargo >/dev/null 2>&1 || missing_tools+=("cargo")
+    command -v rustc >/dev/null 2>&1 || missing_tools+=("rustc")
     if ((${#missing_tools[@]} > 0)); then
         echo "Skipping make-based v86 build: missing ${missing_tools[*]}"
+        return 1
+    fi
+    local rust_sysroot rust_target_dir
+    rust_sysroot="$(rustc --print sysroot 2>/dev/null || true)"
+    rust_target_dir="${rust_sysroot}/lib/rustlib/wasm32-unknown-unknown/lib"
+    if [[ -z "${rust_sysroot}" || ! -d "${rust_target_dir}" ]]; then
+        echo "Skipping make-based v86 build: missing rust target wasm32-unknown-unknown"
+        if command -v rustup >/dev/null 2>&1; then
+            echo "Hint: run 'rustup target add wasm32-unknown-unknown'"
+        fi
         return 1
     fi
     echo "Trying make-based v86 build"

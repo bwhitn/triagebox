@@ -20,6 +20,25 @@ need_node_cmd() {
     missing+=("node (or nodejs)")
 }
 
+need_rust_wasm_target() {
+    if ! command -v rustc >/dev/null 2>&1; then
+        missing+=("rustc")
+        return 0
+    fi
+
+    local sysroot target_libdir
+    sysroot="$(rustc --print sysroot 2>/dev/null || true)"
+    target_libdir="${sysroot}/lib/rustlib/wasm32-unknown-unknown/lib"
+
+    if [[ -z "${sysroot}" || ! -d "${target_libdir}" ]]; then
+        if command -v rustup >/dev/null 2>&1; then
+            missing+=("rust wasm target wasm32-unknown-unknown (run: rustup target add wasm32-unknown-unknown)")
+        else
+            missing+=("rust wasm target wasm32-unknown-unknown")
+        fi
+    fi
+}
+
 # Core host tools for this project and Buildroot compilation.
 required_cmds=(
     awk
@@ -62,7 +81,10 @@ if [[ "${check_v86_min}" == "1" ]]; then
     need_cmd java
     need_cmd clang
     need_cmd wasm-ld
+    need_cmd cargo
+    need_cmd rustc
     need_node_cmd
+    need_rust_wasm_target
 fi
 
 prefetch_wheels="${PREFETCH_REFINERY_WHEELS:-1}"
