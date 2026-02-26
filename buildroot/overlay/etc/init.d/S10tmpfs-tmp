@@ -1,0 +1,26 @@
+#!/bin/sh
+# Ensure /tmp is RAM-backed on every boot.
+
+case "$1" in
+    start)
+        mkdir -p /tmp
+        chmod 1777 /tmp 2>/dev/null || true
+
+        # Nothing to do if /tmp is already a tmpfs mount.
+        if grep -qs ' /tmp tmpfs ' /proc/mounts; then
+            exit 0
+        fi
+
+        # If /tmp is mounted separately with another fs, drop it first.
+        if grep -qs ' /tmp ' /proc/mounts; then
+            umount /tmp 2>/dev/null || true
+        fi
+
+        mount -t tmpfs -o mode=1777,nosuid,nodev,size="${TMPFS_TMP_SIZE:-256m}" tmpfs /tmp 2>/dev/null \
+            || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /tmp 2>/dev/null \
+            || true
+        chmod 1777 /tmp 2>/dev/null || true
+        ;;
+esac
+
+exit 0

@@ -1,10 +1,18 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build build-resume preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve clean
+.PHONY: build build-resume build-fast build-kernel-fast preflight fetch-v86 build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve clean
 
 build: fetch-v86 build-disk
 
 build-resume: fetch-v86 build-disk-resume
+
+build-fast: preflight
+	BUILDROOT_RESUME=1 BUILDROOT_TOPLEVEL_PARALLEL=1 PREFETCH_DOWNLOADS=0 AUTO_SHRINK=0 ./scripts/build-boot-assets-buildroot.sh
+	./scripts/write-build-config.sh
+
+build-kernel-fast: preflight
+	BUILDROOT_RESUME=1 BUILDROOT_ONLY=kernel BUILDROOT_TOPLEVEL_PARALLEL=1 PREFETCH_DOWNLOADS=0 PREFETCH_REFINERY_WHEELS=0 REFINERY_REQUIRE_BUILDROOT_TARGET=0 ./scripts/build-boot-assets-buildroot.sh
+	./scripts/write-build-config.sh
 
 preflight:
 	./scripts/check-build-deps.sh

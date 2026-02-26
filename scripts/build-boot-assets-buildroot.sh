@@ -49,12 +49,13 @@ LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar
 INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
 BUILDROOT_ONLY="${BUILDROOT_ONLY:-all}" # all|kernel
 
-EXTRA_MB="${EXTRA_MB:-32}"
+EXTRA_MB="${EXTRA_MB:-8}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
 DISK_MB="${DISK_MB:-}"
 AUTO_SHRINK="${AUTO_SHRINK:-1}"
 SHRINK_PAD_MB="${SHRINK_PAD_MB:-0}"
 SHRINK_MIN_MB="${SHRINK_MIN_MB:-0}"
+ROOTFS_RESERVED_BLOCKS_PERCENT="${ROOTFS_RESERVED_BLOCKS_PERCENT:-0}"
 
 DISK_IMAGE="${ASSETS_DIR}/buildroot-linux.img"
 VMLINUX_OUT="${ASSETS_DIR}/vmlinuz"
@@ -134,6 +135,10 @@ fi
 
 if ! [[ "${BUILDROOT_JOBS}" =~ ^[0-9]+$ ]] || (( BUILDROOT_JOBS < 1 )); then
     echo "BUILDROOT_JOBS must be an integer >= 1 (got: ${BUILDROOT_JOBS})" >&2
+    exit 1
+fi
+if ! [[ "${ROOTFS_RESERVED_BLOCKS_PERCENT}" =~ ^[0-9]+$ ]] || (( ROOTFS_RESERVED_BLOCKS_PERCENT < 0 )) || (( ROOTFS_RESERVED_BLOCKS_PERCENT > 50 )); then
+    echo "ROOTFS_RESERVED_BLOCKS_PERCENT must be an integer in [0, 50] (got: ${ROOTFS_RESERVED_BLOCKS_PERCENT})" >&2
     exit 1
 fi
 
@@ -850,10 +855,13 @@ export PATH=/bin:/sbin
 
 root_dev=""
 root_fstype=""
+root_mount_mode="ro"
 for arg in $(/bin/busybox cat /proc/cmdline); do
     case "$arg" in
         root=*) root_dev="${arg#root=}" ;;
         rootfstype=*) root_fstype="${arg#rootfstype=}" ;;
+        rw) root_mount_mode="rw" ;;
+        ro) root_mount_mode="ro" ;;
     esac
 done
 [ -n "$root_dev" ] || root_dev="/dev/sda"
@@ -866,9 +874,9 @@ while [ $i -lt 50 ]; do
 done
 
 if [ -n "$root_fstype" ]; then
-    /bin/busybox mount -t "$root_fstype" -o rw "$root_dev" /newroot
+    /bin/busybox mount -t "$root_fstype" -o "$root_mount_mode" "$root_dev" /newroot
 else
-    /bin/busybox mount -o rw "$root_dev" /newroot
+    /bin/busybox mount -o "$root_mount_mode" "$root_dev" /newroot
 fi
 
 /bin/busybox mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
@@ -947,7 +955,8 @@ echo "planned disk size: ${planned_disk_mb}MB"
 rm -f "${DISK_IMAGE}"
 truncate -s "${planned_disk_mb}M" "${DISK_IMAGE}"
 # ext2 keeps metadata overhead lower than ext4 and avoids journal traffic.
-mke2fs -q -t ext2 -L rootfs -F -d "${EXPORT_DIR}" "${DISK_IMAGE}"
+# Reserve 0% blocks by default because persistent user writes go through /root 9p.
+mke2fs -q -t ext2 -m "${ROOTFS_RESERVED_BLOCKS_PERCENT}" -L rootfs -F -d "${EXPORT_DIR}" "${DISK_IMAGE}"
 
 if [[ "${AUTO_SHRINK}" == "1" ]]; then
     echo "[7/8] Auto-shrinking disk image"

@@ -1,0 +1,36 @@
+#!/bin/sh
+# Keep /var ephemeral on tmpfs for short-lived analysis sessions.
+
+case "$1" in
+    start)
+        # Allow temporary opt-out for debugging.
+        if grep -qw 'vartmpfs=0' /proc/cmdline 2>/dev/null; then
+            exit 0
+        fi
+
+        mkdir -p /var
+        if ! grep -qs ' /var tmpfs ' /proc/mounts; then
+            if grep -qs ' /var ' /proc/mounts; then
+                umount /var 2>/dev/null || true
+            fi
+            mount -t tmpfs -o mode=0755,nosuid,nodev,size="${TMPFS_VAR_SIZE:-64m}" tmpfs /var 2>/dev/null \
+                || mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /var 2>/dev/null \
+                || true
+        fi
+
+        mkdir -p /var/log /var/tmp /var/cache /var/lib /var/spool /var/empty
+        chmod 1777 /var/tmp 2>/dev/null || true
+
+        mkdir -p /run /run/lock
+        if [ ! -L /var/run ]; then
+            rm -rf /var/run 2>/dev/null || true
+            ln -s ../run /var/run 2>/dev/null || true
+        fi
+        if [ ! -L /var/lock ]; then
+            rm -rf /var/lock 2>/dev/null || true
+            ln -s ../run/lock /var/lock 2>/dev/null || true
+        fi
+        ;;
+esac
+
+exit 0

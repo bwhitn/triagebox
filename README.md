@@ -60,6 +60,12 @@ Resume a failed Buildroot disk build without deleting `.work/buildroot/output`:
 make build-disk-resume
 ```
 
+Fast iterative disk rebuild (resume + top-level parallel + skip prefetch + no auto-shrink):
+
+```bash
+make build-fast
+```
+
 Build only the kernel artifact (`public/assets/vmlinuz`) without rebuilding disk/initrd:
 
 ```bash
@@ -70,6 +76,12 @@ Resume kernel-only build:
 
 ```bash
 make build-kernel-resume
+```
+
+Fast iterative kernel-only rebuild:
+
+```bash
+make build-kernel-fast
 ```
 
 ## Build knobs
@@ -119,11 +131,12 @@ make build-kernel-resume
 - `BINARY_REFINERY_VERSION` (default `0.9.26`)
 - `PYTHON_LIEF_VERSION` (default `0.17.3`)
 - `DISK_MB` (fixed final pre-shrink size; optional)
-- `EXTRA_MB` (default `32`)
+- `EXTRA_MB` (default `8`)
 - `MIN_DISK_MB` (default `64`)
 - `AUTO_SHRINK` (default `1`)
 - `SHRINK_PAD_MB` (default `0`)
 - `SHRINK_MIN_MB` (default `0`)
+- `ROOTFS_RESERVED_BLOCKS_PERCENT` (default `0`; ext2 reserved blocks percentage used by `mke2fs`)
 - `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
 - `FETCH_VGA_BIOS` (default `0`; set `1` only when you enable VGA output)
 
@@ -188,6 +201,15 @@ If present, missing optional binary-refinery wheel report is at `http://localhos
 Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
+Runtime filesystem mode defaults:
+- `/tmp` is mounted as `tmpfs` (RAM-backed).
+- `/var` is mounted as `tmpfs` (RAM-backed, non-persistent).
+- `/` is remounted read-only late in boot.
+- `/root` stays writable through the 9p host exchange mount.
+Kernel cmdline debug overrides:
+- `vartmpfs=0` keeps `/var` on the root disk.
+- `rootrw=1` keeps `/` writable.
+
 The UI import workflow is non-persistent:
 - `Stage Non-Persistent Boot Import` registers a server file/path mapping for `/root` and injects it through v86 filesystem APIs (no serial scripting).
 - If VM is stopped, staged imports are applied on next boot only, then cleared automatically.
