@@ -26,7 +26,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` (required)
 - `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
-- For `make build-v86-min`: `git`, `node` (or `nodejs`), `npm`, `java` (OpenJDK), `clang`, `wasm-ld` (from `lld`), `cargo`, `rustc`, and rust target `wasm32-unknown-unknown` (`wasm-opt` from `binaryen` is optional but recommended)
+- For `make build-v86-min`: `git`, `node` (or `nodejs`), `npm`, `java` (OpenJDK), `clang`, `wasm-ld` (from `lld`), `cargo`, `rustc`, rust target `wasm32-unknown-unknown`, and `wasm-opt` (from `binaryen`)
 
 ## Build VM assets
 
@@ -167,8 +167,8 @@ make build-kernel-fast
 - `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
 - `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`; auto-falls back to `install` if no lockfile exists)
 - `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
-- `V86_WASM_OPT` (default `auto`; `auto` uses `wasm-opt` when available, `1` requires it, `0` disables post-optimization)
-- `V86_WASM_OPT_LEVEL` (default `2`; one of `0`, `1`, `2`, `3`, `4`, `s`, `z`)
+- `V86_WASM_OPT` (default `1`; `1` runs wasm-opt post-optimization, `0` disables it)
+- `V86_WASM_OPT_LEVEL` (default `3`; one of `0`, `1`, `2`, `3`, `4`, `s`, `z`)
 - `V86_WASM_OPT_STRIP_DEBUG` (default `1`; strip debug sections during wasm-opt pass)
 
 Binary-refinery note:

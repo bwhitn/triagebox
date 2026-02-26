@@ -11,8 +11,8 @@ V86_GIT_UPDATE="${V86_GIT_UPDATE:-1}"
 V86_NPM_INSTALL="${V86_NPM_INSTALL:-ci}"
 V86_BUILD_COMMAND="${V86_BUILD_COMMAND:-auto}"
 NODE_BIN="${NODE_BIN:-}"
-V86_WASM_OPT="${V86_WASM_OPT:-auto}"
-V86_WASM_OPT_LEVEL="${V86_WASM_OPT_LEVEL:-2}"
+V86_WASM_OPT="${V86_WASM_OPT:-1}"
+V86_WASM_OPT_LEVEL="${V86_WASM_OPT_LEVEL:-3}"
 V86_WASM_OPT_STRIP_DEBUG="${V86_WASM_OPT_STRIP_DEBUG:-1}"
 
 need_cmd() {
@@ -196,8 +196,8 @@ optimize_wasm_asset() {
     local wasm_file="${ASSETS_DIR}/v86.wasm"
     local level_opt before_size after_size
 
-    if [[ "${V86_WASM_OPT}" != "0" && "${V86_WASM_OPT}" != "1" && "${V86_WASM_OPT}" != "auto" ]]; then
-        echo "V86_WASM_OPT must be 0, 1, or auto (got: ${V86_WASM_OPT})" >&2
+    if [[ "${V86_WASM_OPT}" != "0" && "${V86_WASM_OPT}" != "1" ]]; then
+        echo "V86_WASM_OPT must be 0 or 1 (got: ${V86_WASM_OPT})" >&2
         exit 1
     fi
     if [[ ! "${V86_WASM_OPT_LEVEL}" =~ ^(0|1|2|3|4|s|z)$ ]]; then
@@ -213,14 +213,7 @@ optimize_wasm_asset() {
         echo "Skipping wasm-opt (V86_WASM_OPT=0)"
         return 0
     fi
-    if ! command -v wasm-opt >/dev/null 2>&1; then
-        if [[ "${V86_WASM_OPT}" == "1" ]]; then
-            echo "wasm-opt requested but not found in PATH (install binaryen)" >&2
-            exit 1
-        fi
-        echo "Skipping wasm-opt (not installed; V86_WASM_OPT=auto)"
-        return 0
-    fi
+    need_cmd wasm-opt
 
     level_opt="-O${V86_WASM_OPT_LEVEL}"
     before_size="$(stat -c%s "${wasm_file}")"
