@@ -74,13 +74,11 @@ case "$1" in
                     load_9p_modules
                 fi
                 if try_mount_once; then
-                    echo "Mounted host 9p on /root"
                     exit 0
                 fi
                 attempts=$((attempts + 1))
                 sleep 1
             done
-            echo "Warning: failed to mount host 9p on /root after retries" >&2
         ) &
         ;;
 esac

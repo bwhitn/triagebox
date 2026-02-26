@@ -76,7 +76,7 @@
   let diskStateReady = Promise.resolve();
   let bootImports = [];
   let bootImportInFlight = false;
-  let rootWatchEnabled = false;
+  let rootWatchEnabled = true;
   let rootWatchTimer = null;
   let rootWatchPending = false;
   let rootWatchKnownNames = new Set();
@@ -879,6 +879,25 @@
     }, 1000);
   }
 
+  async function downloadEncryptedZip(name, bytes) {
+    const safeName = basename(name || "root-file.bin");
+    const response = await fetch(`/api/zip-protect?name=${encodeURIComponent(safeName)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": safeName
+      },
+      body: bytes
+    });
+    if (!response.ok) {
+      throw new Error(await readResponseError(response));
+    }
+    const zipBytes = new Uint8Array(await response.arrayBuffer());
+    const outName = safeName.toLowerCase().endsWith(".zip") ? safeName : `${safeName}.zip`;
+    triggerBrowserDownload(zipBytes, outName);
+    return zipBytes.byteLength;
+  }
+
   async function requestRootFileDownload(name) {
     if (!hasRunningVm()) {
       setRootWatchStatus("start VM first to download files");
@@ -893,13 +912,13 @@
       return;
     }
     rootDownloadInFlight = true;
-    setRootWatchStatus(`downloading /root/${name}...`);
+    setRootWatchStatus(`downloading /root/${name} as encrypted zip...`);
     try {
       const path = `/${name}`;
       const payload = await emulator.read_file(path);
       const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-      triggerBrowserDownload(bytes, name || "root-file.bin");
-      setRootWatchStatus(`downloaded ${name} (${formatBytes(bytes.byteLength)})`);
+      const zipSize = await downloadEncryptedZip(name || "root-file.bin", bytes);
+      setRootWatchStatus(`downloaded ${name} as zip (${formatBytes(zipSize)})`);
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setRootWatchStatus(`download failed (${msg})`);

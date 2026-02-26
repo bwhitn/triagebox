@@ -54,6 +54,8 @@ DISK_UPLOAD_FILENAME = os.environ.get("DISK_UPLOAD_FILENAME", "custom-disk.img")
 DISK_BROWSE_MAX_ENTRIES = env_int("DISK_BROWSE_MAX_ENTRIES", 4096)
 DISK_FILE_DOWNLOAD_MAX_BYTES = env_int("DISK_FILE_DOWNLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024)
 DISK_FILE_UPLOAD_MAX_BYTES = env_int("DISK_FILE_UPLOAD_MAX_BYTES", 512 * 1024 * 1024)
+ZIP_PROTECT_MAX_BYTES = env_int("ZIP_PROTECT_MAX_BYTES", 512 * 1024 * 1024)
+ZIP_PROTECT_PASSWORD = os.environ.get("ZIP_PROTECT_PASSWORD", "infected")
 DISK_IMPORT_ROOT = os.environ.get("DISK_IMPORT_ROOT", ".").strip() or "."
 VM_ROOT_DISK = os.environ.get("VM_ROOT_DISK", "assets/buildroot-linux.img").strip() or "assets/buildroot-linux.img"
 ENABLE_PERSISTENT_VM_ROOT_API = os.environ.get("ENABLE_PERSISTENT_VM_ROOT_API", "0").strip().lower() in {
@@ -63,6 +65,7 @@ ENABLE_PERSISTENT_VM_ROOT_API = os.environ.get("ENABLE_PERSISTENT_VM_ROOT_API", 
     "on",
 }
 DEBUGFS_BIN = os.environ.get("DEBUGFS_BIN", shutil.which("debugfs") or "").strip()
+ZIP_BIN = os.environ.get("ZIP_BIN", shutil.which("zip") or "").strip()
 DEBUGFS_LS_RE = re.compile(r"^/(\d+)/([0-7]{6})/(\d+)/(\d+)/(.*)/([^/]*)/$")
 
 
@@ -843,6 +846,87 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
             missing_error=f"vm root disk not found: {VM_ROOT_DISK}",
         )
 
+    def _handle_zip_protect(self) -> None:
+        if not ZIP_BIN:
+            self._send_json(HTTPStatus.NOT_IMPLEMENTED, {"error": "zip command not available on server"})
+            return
+        if not ZIP_PROTECT_PASSWORD:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "zip password is not configured"})
+            return
+
+        content_length_raw = self.headers.get("Content-Length", "").strip()
+        if not content_length_raw:
+            self._send_json(HTTPStatus.LENGTH_REQUIRED, {"error": "Content-Length header is required"})
+            return
+        try:
+            content_length = int(content_length_raw, 10)
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
+            return
+        if content_length <= 0:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "request body must be non-empty"})
+            return
+        if ZIP_PROTECT_MAX_BYTES > 0 and content_length > ZIP_PROTECT_MAX_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": f"zip input exceeds max size ({ZIP_PROTECT_MAX_BYTES} bytes)"},
+            )
+            return
+
+        query = self._request_query()
+        requested_name = query.get("name", [""])[0] or self.headers.get("X-Filename", "")
+        input_name = self._sanitize_filename(requested_name) or "root-file.bin"
+        output_name = input_name if input_name.lower().endswith(".zip") else f"{input_name}.zip"
+
+        raw_data = bytearray()
+        remaining = content_length
+        try:
+            while remaining > 0:
+                chunk = self.rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise OSError("request body ended unexpectedly")
+                raw_data.extend(chunk)
+                remaining -= len(chunk)
+        except OSError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to read request body: {exc}"})
+            return
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="zip-protect-") as tmp_dir:
+                input_path = os.path.join(tmp_dir, input_name)
+                output_path = os.path.join(tmp_dir, output_name)
+                with open(input_path, "wb") as input_file:
+                    input_file.write(raw_data)
+
+                proc = subprocess.run(
+                    [ZIP_BIN, "-q", "-P", ZIP_PROTECT_PASSWORD, output_path, input_name],
+                    cwd=tmp_dir,
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if proc.returncode != 0:
+                    detail = (proc.stderr or proc.stdout or "").strip()
+                    raise RuntimeError(detail or f"zip exited with code {proc.returncode}")
+                if not os.path.isfile(output_path):
+                    raise RuntimeError("zip output was not produced")
+
+                zip_size = os.path.getsize(output_path)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{output_name}"')
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(zip_size))
+                self.end_headers()
+                with open(output_path, "rb") as zip_file:
+                    shutil.copyfileobj(zip_file, self.wfile, length=64 * 1024)
+        except RuntimeError as exc:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": f"failed to create encrypted zip: {exc}"})
+            return
+
     def _parse_range(self, range_header: str, file_size: int) -> tuple[int, int] | None:
         value = range_header.strip()
         if not value.startswith("bytes="):
@@ -1042,6 +1126,9 @@ class CompressedStaticHandler(SimpleHTTPRequestHandler):
         self._serve(send_body=False)
 
     def do_POST(self) -> None:  # noqa: N802
+        if self._request_path() == "/api/zip-protect":
+            self._handle_zip_protect()
+            return
         if ENABLE_PERSISTENT_VM_ROOT_API and self._request_path() == "/api/vm-root/import":
             self._handle_import_vm_root_file()
             return
