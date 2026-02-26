@@ -7,6 +7,8 @@ if [ "$(id -u)" -eq 0 ]; then
     [ -d /root ] || mkdir -p /root
 fi
 
+cd "${HOME:-/}" 2>/dev/null || cd /
+
 # Show login banner/motd once per shell spawn.
 if [ -r /etc/motd ]; then
     cat /etc/motd
