@@ -126,7 +126,8 @@ restore_makefile() {
 apply_serial_lean_patch() {
     local src="$1"
     local mf="${src}/Makefile"
-    local token esc
+    local token
+    local -a unresolved=()
     local -a drop_tokens=(
         "src/vga.js"
         "src/floppy.js"
@@ -149,9 +150,21 @@ apply_serial_lean_patch() {
     backup_makefile "${src}" || return 1
 
     for token in "${drop_tokens[@]}"; do
-        esc="${token//\//\\/}"
-        sed -i -e "s# ${esc}# #g" "${mf}"
+        # Fixed-string replacements only; do not rely on regex semantics.
+        TOKEN="${token}" perl -0pi -e 's/\Q $ENV{TOKEN}\E/ /g; s/\Q\t$ENV{TOKEN}\E/\t/g' "${mf}"
     done
+
+    for token in "${drop_tokens[@]}"; do
+        if grep -F -q " ${token}" "${mf}" || grep -F -q "$(printf '\t%s' "${token}")" "${mf}"; then
+            unresolved+=("${token}")
+        fi
+    done
+
+    if ((${#unresolved[@]} > 0)); then
+        echo "Lean patch could not remove module tokens from v86 Makefile:" >&2
+        printf '  %s\n' "${unresolved[@]}" >&2
+        return 1
+    fi
 
     echo "Applied lean v86 module patch profile=${V86_LEAN_PROFILE}"
 }
