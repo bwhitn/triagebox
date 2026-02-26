@@ -15,6 +15,24 @@ V86_LEAN_PROFILE="${V86_LEAN_PROFILE:-none}"
 V86_LEAN_STRICT="${V86_LEAN_STRICT:-0}"
 
 V86_MAKEFILE_BACKUP=""
+V86_LEAN_DROP_TOKENS=(
+    "src/vga.js"
+    "src/floppy.js"
+    "src/ps2.js"
+    "src/iso9660.js"
+    "src/ne2k.js"
+    "src/sb16.js"
+    "src/virtio_net.js"
+    "src/browser/screen.js"
+    "src/browser/keyboard.js"
+    "src/browser/mouse.js"
+    "src/browser/speaker.js"
+    "src/browser/network.js"
+    "src/browser/inbrowser_network.js"
+    "src/browser/fake_network.js"
+    "src/browser/wisp_network.js"
+    "src/browser/fetch_network.js"
+)
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -128,33 +146,16 @@ apply_serial_lean_patch() {
     local mf="${src}/Makefile"
     local token
     local -a unresolved=()
-    local -a drop_tokens=(
-        "src/vga.js"
-        "src/floppy.js"
-        "src/ps2.js"
-        "src/iso9660.js"
-        "src/ne2k.js"
-        "src/sb16.js"
-        "src/virtio_net.js"
-        "src/browser/screen.js"
-        "src/browser/keyboard.js"
-        "src/browser/mouse.js"
-        "src/browser/speaker.js"
-        "src/browser/network.js"
-        "src/browser/inbrowser_network.js"
-        "src/browser/fake_network.js"
-        "src/browser/wisp_network.js"
-        "src/browser/fetch_network.js"
-    )
+    local preview
 
     backup_makefile "${src}" || return 1
 
-    for token in "${drop_tokens[@]}"; do
+    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
         # Fixed-string replacements only; do not rely on regex semantics.
         TOKEN="${token}" perl -0pi -e 's/\Q $ENV{TOKEN}\E/ /g; s/\Q\t$ENV{TOKEN}\E/\t/g' "${mf}"
     done
 
-    for token in "${drop_tokens[@]}"; do
+    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
         if grep -F -q " ${token}" "${mf}" || grep -F -q "$(printf '\t%s' "${token}")" "${mf}"; then
             unresolved+=("${token}")
         fi
@@ -162,6 +163,19 @@ apply_serial_lean_patch() {
 
     if ((${#unresolved[@]} > 0)); then
         echo "Lean patch could not remove module tokens from v86 Makefile:" >&2
+        printf '  %s\n' "${unresolved[@]}" >&2
+        return 1
+    fi
+
+    preview="$(cd "${src}" && make -n build/libv86.js 2>/dev/null || true)"
+    unresolved=()
+    for token in "${V86_LEAN_DROP_TOKENS[@]}"; do
+        if grep -F -q "${token}" <<<"${preview}"; then
+            unresolved+=("${token}")
+        fi
+    done
+    if ((${#unresolved[@]} > 0)); then
+        echo "Lean patch did not affect active make recipe for build/libv86.js:" >&2
         printf '  %s\n' "${unresolved[@]}" >&2
         return 1
     fi
@@ -198,7 +212,15 @@ run_make_build() {
     local make_failed=0
     normalize_lean_profile
     if [[ "${V86_LEAN_PROFILE}" != "none" ]]; then
-        apply_serial_lean_patch "${src}" || return 1
+        if ! apply_serial_lean_patch "${src}"; then
+            if [[ "${V86_LEAN_STRICT}" == "0" ]]; then
+                echo "Lean patch not applicable; retrying full make build (V86_LEAN_STRICT=0)"
+                restore_makefile "${src}"
+                V86_LEAN_PROFILE="none"
+            else
+                return 1
+            fi
+        fi
     fi
 
     echo "Trying make-based v86 build (profile=${V86_LEAN_PROFILE})"

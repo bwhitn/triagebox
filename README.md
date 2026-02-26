@@ -168,7 +168,7 @@ make build-kernel-fast
 - `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`; auto-falls back to `install` if no lockfile exists)
 - `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
 - `V86_LEAN_PROFILE` (default `none`; set `serial` to try stripping video/mouse/sound/cdrom/network JS modules during v86 source build)
-- `V86_LEAN_STRICT` (default `0`; with lean profile enabled, `0` falls back to full build on failure, `1` fails immediately)
+- `V86_LEAN_STRICT` (default `0`; with lean profile enabled, `0` falls back to full build when patching/build fails, `1` fails immediately)
 
 Binary-refinery note:
 
