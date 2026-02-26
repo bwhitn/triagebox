@@ -189,15 +189,15 @@ Buildroot-provided optional dependency report is at `http://localhost:8080/asset
 Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
 Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
 The UI import workflow is non-persistent:
-- `Stage Non-Persistent Boot Import` registers a server file/path mapping and injects it over serial into the running VM.
+- `Stage Non-Persistent Boot Import` registers a server file/path mapping for `/root` and injects it through v86 filesystem APIs (no serial scripting).
 - If VM is stopped, staged imports are applied on next boot only, then cleared automatically.
 - If VM is running, import is applied immediately to the current boot only.
 - `Clear Staged Imports` removes all currently staged mappings.
 - `Start /root Monitor` polls `/root` while VM is running and highlights newly appeared files.
-- Each monitored `/root` file can be downloaded live through serial/base64 without touching disk images.
+- Each monitored `/root` file can be downloaded directly from the v86 filesystem bridge without touching disk images.
 - The Buildroot disk image file is not modified by this workflow.
 Server import source root defaults to `public/` and can be changed with `DISK_IMPORT_ROOT`.
-Large files are intentionally capped for runtime serial injection (`MAX_RUNTIME_IMPORT_BYTES` in `public/app.js`).
+Large files are intentionally capped for runtime import (`MAX_RUNTIME_IMPORT_BYTES` in `public/app.js`).
 Persistent disk-modifying vm-root APIs are disabled by default; set `ENABLE_PERSISTENT_VM_ROOT_API=1` to re-enable them.
 
 ### Docker server (Debian trixie-slim)

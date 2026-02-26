@@ -25,6 +25,7 @@
   const vgaEnabled = config.enableVga === true || (config.enableVga !== false && !serialEnabled);
   const mouseEnabled = config.enableMouse === true;
   const cdromEnabled = config.enableCdrom === true;
+  const rootExchangeEnabled = config.enableRootExchange !== false;
 
   const statusEl = document.getElementById("status");
   const ipsEl = document.getElementById("ips");
@@ -75,18 +76,11 @@
   let diskStateReady = Promise.resolve();
   let bootImports = [];
   let bootImportInFlight = false;
-  let bootImportRetryTimer = null;
-  let bootImportRetryStopTimer = null;
   let rootWatchEnabled = false;
   let rootWatchTimer = null;
   let rootWatchPending = false;
-  let rootWatchBuffer = "";
-  let rootWatchPendingTimer = null;
   let rootWatchKnownNames = new Set();
   let rootDownloadInFlight = false;
-  let rootDownloadTargetName = "";
-  let rootDownloadTimeout = null;
-  let preferSerialCharStream = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -119,14 +113,7 @@
     alt_f2: [0x38, 0x3c, 0xbc, 0xb8]
   };
   const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
-  const ROOT_WATCH_BEGIN = "__NB_ROOTWATCH_BEGIN__";
-  const ROOT_WATCH_END = "__NB_ROOTWATCH_END__";
-  const ROOT_GET_BEGIN = "__NB_ROOTGET_BEGIN__";
-  const ROOT_GET_END = "__NB_ROOTGET_END__";
-  const ROOT_WATCH_BEGIN_PRINTF = markerToPrintfEscapes(ROOT_WATCH_BEGIN);
-  const ROOT_WATCH_END_PRINTF = markerToPrintfEscapes(ROOT_WATCH_END);
-  const ROOT_GET_BEGIN_PRINTF = markerToPrintfEscapes(ROOT_GET_BEGIN);
-  const ROOT_GET_END_PRINTF = markerToPrintfEscapes(ROOT_GET_END);
+  const ROOT_SHARE_PREFIX = "/root";
 
   function setStatus(text) {
     statusEl.textContent = `status: ${text}`;
@@ -276,11 +263,6 @@
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
   }
 
-  function shellQuote(value) {
-    const raw = String(value);
-    return `'${raw.replace(/'/g, `'\"'\"'`)}'`;
-  }
-
   function normalizeGuestPath(inputPath, fallbackName) {
     const raw = String(inputPath || "").trim();
     const base = raw.length > 0 ? raw : `/root/${fallbackName}`;
@@ -318,21 +300,113 @@
     return value.startsWith("/") ? value : `/${value}`;
   }
 
-  function bytesToBase64(bytes) {
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
-    }
-    return btoa(binary);
+  function hasFilesystemBridge() {
+    return !!(
+      rootExchangeEnabled &&
+      emulator &&
+      emulator.fs9p &&
+      typeof emulator.create_file === "function" &&
+      typeof emulator.read_file === "function"
+    );
   }
 
-  function markerToPrintfEscapes(marker) {
-    const chars = Array.from(String(marker || ""));
-    return chars
-      .map((ch) => `\\${ch.charCodeAt(0).toString(8).padStart(3, "0")}`)
-      .join("");
+  function toRootSharePath(targetPath) {
+    const normalized = normalizeGuestPath(targetPath || "", "");
+    if (normalized === ROOT_SHARE_PREFIX || !normalized.startsWith(`${ROOT_SHARE_PREFIX}/`)) {
+      throw new Error("destination path must be under /root");
+    }
+    return normalized.slice(ROOT_SHARE_PREFIX.length);
+  }
+
+  function ensureRootShareParentDirectory(sharePath) {
+    const fs = emulator?.fs9p;
+    if (!fs || typeof fs.Search !== "function" || typeof fs.CreateDirectory !== "function" || typeof fs.GetInode !== "function") {
+      throw new Error("filesystem bridge unavailable");
+    }
+    const parent = parentDiskPath(sharePath);
+    const segments = parent.split("/").filter(Boolean);
+    let currentId = 0;
+    for (const segment of segments) {
+      let nextId = fs.Search(currentId, segment);
+      if (nextId === -1) {
+        nextId = fs.CreateDirectory(segment, currentId);
+      }
+      const inode = fs.GetInode(nextId);
+      if (!inode || (inode.mode & 0xF000) !== 0x4000) {
+        throw new Error(`parent path is not a directory: ${segment}`);
+      }
+      currentId = nextId;
+    }
+  }
+
+  function listRootShareRegularFiles() {
+    const fs = emulator?.fs9p;
+    if (!fs || typeof fs.read_dir !== "function" || typeof fs.SearchPath !== "function" || typeof fs.GetInode !== "function") {
+      throw new Error("filesystem bridge unavailable");
+    }
+    const pending = [{ sharePath: "/", relativePath: "" }];
+    const files = [];
+    while (pending.length > 0) {
+      const node = pending.pop();
+      const entries = fs.read_dir(node.sharePath) || [];
+      for (const name of entries) {
+        if (typeof name !== "string" || name.length === 0 || name.includes("/")) {
+          continue;
+        }
+        const sharePath = node.sharePath === "/" ? `/${name}` : `${node.sharePath}/${name}`;
+        const found = fs.SearchPath(sharePath);
+        if (!found || found.id === -1) {
+          continue;
+        }
+        const inode = fs.GetInode(found.id);
+        if (!inode) {
+          continue;
+        }
+        const rel = node.relativePath ? `${node.relativePath}/${name}` : name;
+        if ((inode.mode & 0xF000) === 0x4000) {
+          pending.push({ sharePath, relativePath: rel });
+          continue;
+        }
+        files.push(rel);
+      }
+    }
+    files.sort((a, b) => a.localeCompare(b));
+    return files;
+  }
+
+  async function fetchServerSourceBytes(srcPath) {
+    const sourceResp = await fetch(srcPath, { cache: "no-store" });
+    if (!sourceResp.ok) {
+      throw new Error(await readResponseError(sourceResp));
+    }
+    const sourceBytes = new Uint8Array(await sourceResp.arrayBuffer());
+    if (sourceBytes.byteLength <= 0) {
+      throw new Error("source file is empty");
+    }
+    if (sourceBytes.byteLength > MAX_RUNTIME_IMPORT_BYTES) {
+      throw new Error(`source file exceeds runtime limit (${formatBytes(MAX_RUNTIME_IMPORT_BYTES)})`);
+    }
+    return sourceBytes;
+  }
+
+  async function writeBytesToVmRootShare(targetPath, bytes) {
+    if (!hasFilesystemBridge()) {
+      throw new Error("filesystem bridge not ready");
+    }
+    const fs = emulator.fs9p;
+    const sharePath = toRootSharePath(targetPath);
+    ensureRootShareParentDirectory(sharePath);
+    if (typeof fs.SearchPath === "function" && typeof fs.GetInode === "function" && typeof fs.DeleteNode === "function") {
+      const existing = fs.SearchPath(sharePath);
+      if (existing && existing.id !== -1) {
+        const inode = fs.GetInode(existing.id);
+        if (inode && (inode.mode & 0xF000) === 0x4000) {
+          throw new Error("destination exists as directory");
+        }
+        fs.DeleteNode(sharePath);
+      }
+    }
+    await emulator.create_file(sharePath, bytes);
   }
 
   function upsertBootImport(srcPath, targetPath) {
@@ -347,48 +421,23 @@
 
   function clearBootImports() {
     bootImports = [];
-    stopBootImportRetryLoop();
     setDiskStatus("cleared staged one-shot boot imports");
   }
 
-  function buildRuntimeImportScript(targetPath, base64Data) {
-    const parentPath = parentDiskPath(targetPath);
-    const tempPath = `/tmp/.nixbrowser-import-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.b64`;
-    const encodedLines = base64Data.match(/.{1,76}/g) || [];
-    return [
-      `mkdir -p ${shellQuote(parentPath)} || exit 1`,
-      `cat > ${shellQuote(tempPath)} <<'__NIXBROWSER_IMPORT_B64__'`,
-      ...encodedLines,
-      "__NIXBROWSER_IMPORT_B64__",
-      `(base64 -d ${shellQuote(tempPath)} > ${shellQuote(targetPath)} || busybox base64 -d ${shellQuote(tempPath)} > ${shellQuote(targetPath)})`,
-      "rc=$?",
-      `rm -f ${shellQuote(tempPath)}`,
-      "if [ \"$rc\" -eq 0 ]; then echo '[import] ok'; else echo '[import] failed'; fi"
-    ].join("\n");
-  }
-
   async function stageImportIntoRunningVm(srcPath, targetPath) {
-    const sourceResp = await fetch(srcPath, { cache: "no-store" });
-    if (!sourceResp.ok) {
-      throw new Error(await readResponseError(sourceResp));
-    }
-    const sourceBytes = new Uint8Array(await sourceResp.arrayBuffer());
-    if (sourceBytes.byteLength <= 0) {
-      throw new Error("source file is empty");
-    }
-    if (sourceBytes.byteLength > MAX_RUNTIME_IMPORT_BYTES) {
-      throw new Error(`source file exceeds runtime limit (${formatBytes(MAX_RUNTIME_IMPORT_BYTES)})`);
-    }
-    const payload = bytesToBase64(sourceBytes);
-    const script = `${buildRuntimeImportScript(targetPath, payload)}\n`;
-    if (!sendSerialText(script)) {
-      throw new Error("serial console not available");
-    }
+    const sourceBytes = await fetchServerSourceBytes(srcPath);
+    await writeBytesToVmRootShare(targetPath, sourceBytes);
     return sourceBytes.byteLength;
   }
 
-  async function applyBootImportsToRunningVm(source = "manual") {
-    if (!hasRunningVm() || bootImports.length === 0 || bootImportInFlight) {
+  async function applyBootImportsToVm(source = "manual") {
+    if (bootImports.length === 0 || bootImportInFlight) {
+      return;
+    }
+    if (!hasFilesystemBridge()) {
+      if (source === "boot" || source === "boot-prestart") {
+        throw new Error("filesystem bridge not ready");
+      }
       return;
     }
     bootImportInFlight = true;
@@ -396,10 +445,9 @@
       for (const entry of bootImports) {
         await stageImportIntoRunningVm(entry.srcPath, entry.targetPath);
       }
-      if (source === "boot") {
+      if (source === "boot" || source === "boot-prestart") {
         const applied = bootImports.length;
         bootImports = [];
-        stopBootImportRetryLoop();
         setDiskStatus(`applied ${applied} one-shot boot import(s)`);
       } else {
         setDiskStatus(`import staged; ${bootImports.length} boot import(s) active`);
@@ -411,32 +459,6 @@
     } finally {
       bootImportInFlight = false;
     }
-  }
-
-  function stopBootImportRetryLoop() {
-    if (bootImportRetryTimer) {
-      window.clearInterval(bootImportRetryTimer);
-      bootImportRetryTimer = null;
-    }
-    if (bootImportRetryStopTimer) {
-      window.clearTimeout(bootImportRetryStopTimer);
-      bootImportRetryStopTimer = null;
-    }
-  }
-
-  function startBootImportRetryLoop() {
-    stopBootImportRetryLoop();
-    if (bootImports.length === 0) {
-      return;
-    }
-    const tick = () => {
-      void applyBootImportsToRunningVm("boot");
-    };
-    tick();
-    bootImportRetryTimer = window.setInterval(tick, 3000);
-    bootImportRetryStopTimer = window.setTimeout(() => {
-      stopBootImportRetryLoop();
-    }, 30000);
   }
 
   function basename(path) {
@@ -522,6 +544,36 @@
   async function refreshDiskStateFromServer() {
     if (!diskPanelEl) {
       return;
+    }
+    if (!rootExchangeEnabled) {
+      if (injectDiskFileBtn) {
+        injectDiskFileBtn.disabled = true;
+      }
+      if (clearBootImportsBtn) {
+        clearBootImportsBtn.disabled = true;
+      }
+      if (rootWatchToggleBtn) {
+        rootWatchToggleBtn.disabled = true;
+      }
+      if (rootWatchSecondsEl) {
+        rootWatchSecondsEl.disabled = true;
+      }
+      setDiskStatus("root exchange disabled in vm-config");
+      setRootWatchStatus("disabled");
+      updateRootWatchToggleButton();
+      return;
+    }
+    if (injectDiskFileBtn) {
+      injectDiskFileBtn.disabled = false;
+    }
+    if (clearBootImportsBtn) {
+      clearBootImportsBtn.disabled = false;
+    }
+    if (rootWatchToggleBtn) {
+      rootWatchToggleBtn.disabled = false;
+    }
+    if (rootWatchSecondsEl) {
+      rootWatchSecondsEl.disabled = false;
     }
     rootWatchKnownNames = new Set();
     if (rootWatchListEl) {
@@ -739,11 +791,6 @@
     return true;
   }
 
-  function sendSerialText(text) {
-    const encoder = new TextEncoder();
-    return sendSerialBytes(encoder.encode(text));
-  }
-
   function renderRootWatchList(names, newNamesSet = new Set()) {
     if (!rootWatchListEl) {
       return;
@@ -776,10 +823,6 @@
       window.clearInterval(rootWatchTimer);
       rootWatchTimer = null;
     }
-    if (rootWatchPendingTimer) {
-      window.clearTimeout(rootWatchPendingTimer);
-      rootWatchPendingTimer = null;
-    }
     rootWatchPending = false;
   }
 
@@ -797,56 +840,29 @@
     if (!rootWatchEnabled || !hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
       return;
     }
+    if (!hasFilesystemBridge()) {
+      setRootWatchStatus("filesystem bridge not ready");
+      return;
+    }
     rootWatchPending = true;
-    if (rootWatchPendingTimer) {
-      window.clearTimeout(rootWatchPendingTimer);
-    }
-    rootWatchPendingTimer = window.setTimeout(() => {
-      rootWatchPending = false;
-      rootWatchPendingTimer = null;
-      if (rootWatchEnabled) {
-        setRootWatchStatus("scan timeout; retrying...");
+    try {
+      const names = listRootShareRegularFiles();
+      const nextSet = new Set(names);
+      const newNames = names.filter((name) => !rootWatchKnownNames.has(name));
+      rootWatchKnownNames = nextSet;
+      renderRootWatchList(names, new Set(newNames));
+      const now = new Date().toLocaleTimeString();
+      if (newNames.length > 0) {
+        setRootWatchStatus(`${names.length} entries (${newNames.length} new) @ ${now}`);
+      } else {
+        setRootWatchStatus(`${names.length} entries @ ${now}`);
       }
-    }, 4000);
-
-    const cmd = [
-      "",
-      `printf '${ROOT_WATCH_BEGIN_PRINTF}\\n'`,
-      "for __nb_entry in /root/.??* /root/*; do",
-      "  [ -e \"$__nb_entry\" ] || continue",
-      "  __nb_name=\"${__nb_entry##*/}\"",
-      "  printf '%s\\n' \"$__nb_name\"",
-      "done",
-      `printf '${ROOT_WATCH_END_PRINTF}\\n'`,
-      ""
-    ].join("\n");
-    if (!sendSerialText(cmd)) {
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setRootWatchStatus(`scan failed (${msg})`);
+    } finally {
       rootWatchPending = false;
-      if (rootWatchPendingTimer) {
-        window.clearTimeout(rootWatchPendingTimer);
-        rootWatchPendingTimer = null;
-      }
-      setRootWatchStatus("monitor unavailable (serial not ready)");
     }
-  }
-
-  function decodeBase64Payload(payload) {
-    const lines = String(payload || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    const normalized = lines
-      .filter((line) => /^[A-Za-z0-9+/=]+$/.test(line))
-      .join("");
-    if (!normalized) {
-      throw new Error("empty payload");
-    }
-    const binary = atob(normalized);
-    const out = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      out[i] = binary.charCodeAt(i) & 0xff;
-    }
-    return out;
   }
 
   function triggerBrowserDownload(bytes, filename) {
@@ -868,165 +884,30 @@
       setRootWatchStatus("start VM first to download files");
       return;
     }
+    if (!hasFilesystemBridge()) {
+      setRootWatchStatus("filesystem bridge not ready");
+      return;
+    }
     if (rootDownloadInFlight) {
       setRootWatchStatus("download already in progress");
       return;
     }
     rootDownloadInFlight = true;
-    rootDownloadTargetName = name;
     setRootWatchStatus(`downloading /root/${name}...`);
-    if (rootDownloadTimeout) {
-      window.clearTimeout(rootDownloadTimeout);
-    }
-    rootDownloadTimeout = window.setTimeout(() => {
-      if (!rootDownloadInFlight) {
-        return;
-      }
-      rootDownloadInFlight = false;
-      rootDownloadTargetName = "";
-      setRootWatchStatus("download timeout");
-    }, 15000);
-
-    const path = `/root/${name}`;
-    const cmd = [
-      "",
-      `printf '${ROOT_GET_BEGIN_PRINTF}\\n'`,
-      `(base64 < ${shellQuote(path)} 2>/dev/null || busybox base64 < ${shellQuote(path)} 2>/dev/null)`,
-      `printf '\\n${ROOT_GET_END_PRINTF}\\n'`,
-      ""
-    ].join("\n");
-    if (!sendSerialText(cmd)) {
-      if (rootDownloadTimeout) {
-        window.clearTimeout(rootDownloadTimeout);
-        rootDownloadTimeout = null;
-      }
-      rootDownloadInFlight = false;
-      rootDownloadTargetName = "";
-      setRootWatchStatus("download failed (serial not ready)");
-    }
-  }
-
-  function handleRootWatchPayload(payload) {
-    const names = payload
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .filter((line) => line !== "." && line !== "..");
-    names.sort((a, b) => a.localeCompare(b));
-
-    const nextSet = new Set(names);
-    const newNames = names.filter((name) => !rootWatchKnownNames.has(name));
-    rootWatchKnownNames = nextSet;
-    renderRootWatchList(names, new Set(newNames));
-
-    if (rootWatchPendingTimer) {
-      window.clearTimeout(rootWatchPendingTimer);
-      rootWatchPendingTimer = null;
-    }
-    rootWatchPending = false;
-    const now = new Date().toLocaleTimeString();
-    if (newNames.length > 0) {
-      setRootWatchStatus(`${names.length} entries (${newNames.length} new) @ ${now}`);
-    } else {
-      setRootWatchStatus(`${names.length} entries @ ${now}`);
-    }
-  }
-
-  function handleRootDownloadPayload(payload) {
-    if (!rootDownloadInFlight) {
-      return;
-    }
     try {
-      const bytes = decodeBase64Payload(payload);
-      const filename = rootDownloadTargetName || "root-file.bin";
-      triggerBrowserDownload(bytes, filename);
-      setRootWatchStatus(`downloaded ${filename} (${formatBytes(bytes.byteLength)})`);
+      const path = `/${name}`;
+      const payload = await emulator.read_file(path);
+      const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      triggerBrowserDownload(bytes, name || "root-file.bin");
+      setRootWatchStatus(`downloaded ${name} (${formatBytes(bytes.byteLength)})`);
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setRootWatchStatus(`download failed (${msg})`);
     } finally {
-      if (rootDownloadTimeout) {
-        window.clearTimeout(rootDownloadTimeout);
-        rootDownloadTimeout = null;
-      }
       rootDownloadInFlight = false;
-      rootDownloadTargetName = "";
       if (rootWatchEnabled) {
         requestRootWatchScan();
       }
-    }
-  }
-
-  function consumeSerialMarkerBuffer() {
-    while (true) {
-      const watchIdx = rootWatchBuffer.indexOf(ROOT_WATCH_BEGIN);
-      const getIdx = rootWatchBuffer.indexOf(ROOT_GET_BEGIN);
-      let mode = "";
-      let startIdx = -1;
-      if (watchIdx >= 0 && (getIdx < 0 || watchIdx < getIdx)) {
-        mode = "watch";
-        startIdx = watchIdx;
-      } else if (getIdx >= 0) {
-        mode = "get";
-        startIdx = getIdx;
-      } else {
-        if (rootWatchBuffer.length > 4096) {
-          rootWatchBuffer = rootWatchBuffer.slice(-1024);
-        }
-        return;
-      }
-
-      if (startIdx > 0) {
-        rootWatchBuffer = rootWatchBuffer.slice(startIdx);
-      }
-
-      const begin = mode === "watch" ? ROOT_WATCH_BEGIN : ROOT_GET_BEGIN;
-      const end = mode === "watch" ? ROOT_WATCH_END : ROOT_GET_END;
-      const endIdx = rootWatchBuffer.indexOf(end, begin.length);
-      if (endIdx < 0) {
-        if (rootWatchBuffer.length > 65536) {
-          rootWatchBuffer = rootWatchBuffer.slice(0, begin.length);
-        }
-        return;
-      }
-
-      const payload = rootWatchBuffer.slice(begin.length, endIdx);
-      rootWatchBuffer = rootWatchBuffer.slice(endIdx + end.length);
-
-      if (mode === "watch") {
-        handleRootWatchPayload(payload);
-      } else {
-        handleRootDownloadPayload(payload);
-      }
-    }
-  }
-
-  function appendSerialCaptureText(text) {
-    if (!text) {
-      return;
-    }
-    rootWatchBuffer += text;
-    consumeSerialMarkerBuffer();
-  }
-
-  function handleSerialOutputByte(value) {
-    if (preferSerialCharStream) {
-      return;
-    }
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return;
-    }
-    appendSerialCaptureText(String.fromCharCode(value & 0xff));
-  }
-
-  function handleSerialOutputChar(value) {
-    preferSerialCharStream = true;
-    if (typeof value === "string") {
-      appendSerialCaptureText(value);
-      return;
-    }
-    if (typeof value === "number" && Number.isFinite(value)) {
-      appendSerialCaptureText(String.fromCharCode(value & 0xff));
     }
   }
 
@@ -1139,6 +1020,9 @@
       boot_order: 0x132,
       autostart: false
     };
+    if (rootExchangeEnabled) {
+      vmOptions.filesystem = {};
+    }
     if (netDeviceType === "none") {
       vmOptions.disable_ne2k = true;
     }
@@ -1169,12 +1053,6 @@
 
     emulator.add_listener("download-error", (info) => {
       handleDownloadError(info);
-    });
-    emulator.add_listener("serial0-output-byte", (value) => {
-      handleSerialOutputByte(value);
-    });
-    emulator.add_listener("serial0-output-char", (value) => {
-      handleSerialOutputChar(value);
     });
 
     emulator.add_listener("emulator-ready", () => {
@@ -1235,10 +1113,7 @@
     emulator.add_listener("emulator-started", () => {
       setStatus("running");
       startSampling();
-      startBootImportRetryLoop();
-      rootWatchBuffer = "";
       rootWatchKnownNames = new Set();
-      preferSerialCharStream = false;
       if (rootWatchListEl) {
         rootWatchListEl.textContent = "";
       }
@@ -1254,20 +1129,12 @@
     emulator.add_listener("emulator-stopped", () => {
       setStatus("stopped");
       stopSampling();
-      stopBootImportRetryLoop();
       stopRootWatchPolling();
-      rootWatchBuffer = "";
       rootWatchKnownNames = new Set();
-      preferSerialCharStream = false;
       if (rootWatchListEl) {
         rootWatchListEl.textContent = "";
       }
-      if (rootDownloadTimeout) {
-        window.clearTimeout(rootDownloadTimeout);
-        rootDownloadTimeout = null;
-      }
       rootDownloadInFlight = false;
-      rootDownloadTargetName = "";
       if (rootWatchEnabled) {
         setRootWatchStatus("waiting for VM start...");
       }
@@ -1285,6 +1152,9 @@
       const vm = ensureEmulator();
       if (emulatorReadyPromise) {
         await emulatorReadyPromise;
+      }
+      if (bootImports.length > 0) {
+        await applyBootImportsToVm("boot-prestart");
       }
       await vm.run();
     } catch (err) {

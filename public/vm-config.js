@@ -24,6 +24,8 @@ window.V86_VM_CONFIG = {
   // netDeviceType: "none",
   // Optional: only used when net device is enabled.
   // networkRelayUrl: "wss://relay.widgetry.org/",
+  // Enable host<->guest non-persistent /root exchange over virtio-9p.
+  enableRootExchange: true,
   // Optional VGA knobs when enableVga=true.
   // vgaMemoryMb: 8,
   // vgaBios: "assets/v86/vgabios.bin",
