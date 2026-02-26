@@ -34,6 +34,7 @@ required_cmds=(
     gcc
     grep
     gzip
+    java
     make
     mke2fs
     nproc
@@ -48,13 +49,21 @@ required_cmds=(
     unzip
     wc
     python3
-    npm
 )
 
 for cmd in "${required_cmds[@]}"; do
     need_cmd "${cmd}"
 done
-need_node_cmd
+
+check_v86_min="${CHECK_V86_MIN:-0}"
+if [[ "${check_v86_min}" == "1" ]]; then
+    need_cmd git
+    need_cmd npm
+    need_cmd java
+    need_cmd clang
+    need_cmd wasm-ld
+    need_node_cmd
+fi
 
 prefetch_wheels="${PREFETCH_REFINERY_WHEELS:-1}"
 require_buildroot_target="${REFINERY_REQUIRE_BUILDROOT_TARGET:-1}"

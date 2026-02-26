@@ -83,8 +83,12 @@ run_make_build() {
     if ! command -v make >/dev/null 2>&1; then
         return 1
     fi
-    if ! command -v java >/dev/null 2>&1; then
-        echo "Skipping make-based v86 build: java not found"
+    local missing_tools=()
+    command -v java >/dev/null 2>&1 || missing_tools+=("java")
+    command -v clang >/dev/null 2>&1 || missing_tools+=("clang")
+    command -v wasm-ld >/dev/null 2>&1 || missing_tools+=("wasm-ld")
+    if ((${#missing_tools[@]} > 0)); then
+        echo "Skipping make-based v86 build: missing ${missing_tools[*]}"
         return 1
     fi
     echo "Trying make-based v86 build"
@@ -142,6 +146,7 @@ run_npm_build() {
     fi
 
     echo "No known npm build script found in ${pkg}" >&2
+    echo "This v86 tree likely requires the make toolchain path (java clang wasm-ld)." >&2
     return 1
 }
 

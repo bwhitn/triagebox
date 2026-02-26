@@ -26,7 +26,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` (required)
 - `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
-- `git`, `node` (or `nodejs`), `npm`
+- For `make build-v86-min`: `git`, `node` (or `nodejs`), `npm`, `java` (OpenJDK), `clang`, `wasm-ld` (from `lld`)
 
 ## Build VM assets
 

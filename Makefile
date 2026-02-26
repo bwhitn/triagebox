@@ -20,7 +20,8 @@ preflight:
 fetch-v86: preflight
 	./scripts/fetch-v86-assets.sh
 
-build-v86-min: preflight
+build-v86-min:
+	CHECK_V86_MIN=1 ./scripts/check-build-deps.sh
 	./scripts/build-v86-min-assets.sh
 	V86_ASSET_FLAVOR=v86-min ./scripts/write-build-config.sh
 
