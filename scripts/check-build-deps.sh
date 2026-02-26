@@ -53,7 +53,6 @@ required_cmds=(
     gcc
     grep
     gzip
-    java
     make
     mke2fs
     nproc

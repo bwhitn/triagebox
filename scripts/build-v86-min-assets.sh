@@ -11,6 +11,10 @@ V86_GIT_UPDATE="${V86_GIT_UPDATE:-1}"
 V86_NPM_INSTALL="${V86_NPM_INSTALL:-ci}"
 V86_BUILD_COMMAND="${V86_BUILD_COMMAND:-auto}"
 NODE_BIN="${NODE_BIN:-}"
+V86_LEAN_PROFILE="${V86_LEAN_PROFILE:-none}"
+V86_LEAN_STRICT="${V86_LEAN_STRICT:-0}"
+
+V86_MAKEFILE_BACKUP=""
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -78,6 +82,80 @@ resolve_source_dir() {
     echo "${WORK_DIR}"
 }
 
+normalize_lean_profile() {
+    case "${V86_LEAN_PROFILE}" in
+        none|"")
+            V86_LEAN_PROFILE="none"
+            ;;
+        serial|serial-min|min)
+            V86_LEAN_PROFILE="serial"
+            ;;
+        *)
+            echo "Unsupported V86_LEAN_PROFILE: ${V86_LEAN_PROFILE} (expected: none, serial)" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "${V86_LEAN_STRICT}" != "0" && "${V86_LEAN_STRICT}" != "1" ]]; then
+        echo "V86_LEAN_STRICT must be 0 or 1 (got: ${V86_LEAN_STRICT})" >&2
+        exit 1
+    fi
+}
+
+backup_makefile() {
+    local src="$1"
+    local mf="${src}/Makefile"
+    if [[ ! -f "${mf}" ]]; then
+        echo "v86 Makefile not found: ${mf}" >&2
+        return 1
+    fi
+    V86_MAKEFILE_BACKUP="$(mktemp "${src}/.makefile.nixbrowser.XXXXXX")"
+    cp -f "${mf}" "${V86_MAKEFILE_BACKUP}"
+}
+
+restore_makefile() {
+    local src="$1"
+    local mf="${src}/Makefile"
+    if [[ -n "${V86_MAKEFILE_BACKUP}" && -f "${V86_MAKEFILE_BACKUP}" ]]; then
+        cp -f "${V86_MAKEFILE_BACKUP}" "${mf}"
+        rm -f "${V86_MAKEFILE_BACKUP}"
+        V86_MAKEFILE_BACKUP=""
+    fi
+}
+
+apply_serial_lean_patch() {
+    local src="$1"
+    local mf="${src}/Makefile"
+    local token esc
+    local -a drop_tokens=(
+        "src/vga.js"
+        "src/floppy.js"
+        "src/ps2.js"
+        "src/iso9660.js"
+        "src/ne2k.js"
+        "src/sb16.js"
+        "src/virtio_net.js"
+        "src/browser/screen.js"
+        "src/browser/keyboard.js"
+        "src/browser/mouse.js"
+        "src/browser/speaker.js"
+        "src/browser/network.js"
+        "src/browser/inbrowser_network.js"
+        "src/browser/fake_network.js"
+        "src/browser/wisp_network.js"
+        "src/browser/fetch_network.js"
+    )
+
+    backup_makefile "${src}" || return 1
+
+    for token in "${drop_tokens[@]}"; do
+        esc="${token//\//\\/}"
+        sed -i -e "s# ${esc}# #g" "${mf}"
+    done
+
+    echo "Applied lean v86 module patch profile=${V86_LEAN_PROFILE}"
+}
+
 run_make_build() {
     local src="$1"
     if ! command -v make >/dev/null 2>&1; then
@@ -103,8 +181,33 @@ run_make_build() {
         fi
         return 1
     fi
-    echo "Trying make-based v86 build"
-    (cd "${src}" && make build/libv86.js build/v86.wasm)
+
+    local make_failed=0
+    normalize_lean_profile
+    if [[ "${V86_LEAN_PROFILE}" != "none" ]]; then
+        apply_serial_lean_patch "${src}" || return 1
+    fi
+
+    echo "Trying make-based v86 build (profile=${V86_LEAN_PROFILE})"
+    if ! (cd "${src}" && make build/libv86.js build/v86.wasm); then
+        make_failed=1
+    fi
+
+    if (( make_failed )) && [[ "${V86_LEAN_PROFILE}" != "none" ]] && [[ "${V86_LEAN_STRICT}" == "0" ]]; then
+        echo "Lean make build failed; retrying full make build (V86_LEAN_STRICT=0)"
+        restore_makefile "${src}"
+        V86_LEAN_PROFILE="none"
+        if ! (cd "${src}" && make build/libv86.js build/v86.wasm); then
+            return 1
+        fi
+        return 0
+    fi
+
+    if (( make_failed )); then
+        return 1
+    fi
+
+    return 0
 }
 
 run_npm_build() {
@@ -192,6 +295,7 @@ copy_artifacts() {
 main() {
     local src
     src="$(resolve_source_dir)"
+    trap 'restore_makefile "'"${src}"'"' EXIT
 
     if [[ "${V86_BUILD_COMMAND}" != "auto" ]]; then
         echo "Running custom build command: ${V86_BUILD_COMMAND}"
@@ -205,6 +309,8 @@ main() {
 
     verify_artifacts "${src}"
     copy_artifacts "${src}"
+    restore_makefile "${src}"
+    trap - EXIT
 
     echo "v86 source: ${src}"
     echo "v86 custom assets written to ${ASSETS_DIR}"

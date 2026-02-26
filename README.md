@@ -167,6 +167,8 @@ make build-kernel-fast
 - `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
 - `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`; auto-falls back to `install` if no lockfile exists)
 - `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
+- `V86_LEAN_PROFILE` (default `none`; set `serial` to try stripping video/mouse/sound/cdrom/network JS modules during v86 source build)
+- `V86_LEAN_STRICT` (default `0`; with lean profile enabled, `0` falls back to full build on failure, `1` fails immediately)
 
 Binary-refinery note:
 
@@ -203,6 +205,8 @@ FETCH_VGA_BIOS=1 make fetch-v86
 make build-v86-min
 V86_SRC_DIR=/path/to/v86 make build-v86-min
 V86_BUILD_COMMAND="npm run build" make build-v86-min
+V86_LEAN_PROFILE=serial make build-v86-min
+V86_LEAN_PROFILE=serial V86_LEAN_STRICT=1 make build-v86-min
 V86_ASSET_FLAVOR=v86-min make write-build-config
 make use-v86-min
 make use-v86-stock
