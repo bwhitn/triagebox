@@ -57,16 +57,58 @@ is_root_share_mounted() {
     grep -qs ' /root 9p ' /proc/mounts
 }
 
+run_modprobe() {
+    if command -v modprobe >/dev/null 2>&1; then
+        modprobe "$1" 2>/dev/null || true
+        return
+    fi
+    if /bin/busybox --list 2>/dev/null | grep -qx "modprobe"; then
+        /bin/busybox modprobe "$1" 2>/dev/null || true
+        return
+    fi
+}
+
+load_root_share_modules() {
+    # Built-in kernels ignore this; module kernels may need explicit loads.
+    run_modprobe 9pnet_virtio
+    run_modprobe 9pnet
+    run_modprobe 9p
+}
+
+discover_root_share_tag() {
+    for tag_path in /sys/bus/virtio/drivers/9pnet_virtio/virtio*/mount_tag /sys/bus/virtio/devices/virtio*/mount_tag; do
+        [ -r "$tag_path" ] || continue
+        tag_name="$(tr -d '\r\n' < "$tag_path" 2>/dev/null || true)"
+        if [ -n "$tag_name" ]; then
+            echo "$tag_name"
+            return 0
+        fi
+    done
+    echo "host9p"
+    return 0
+}
+
+mount_root_share_with_tag() {
+    tag_name="$1"
+    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 "$tag_name" /root 2>/dev/null && return 0
+    mount -t 9p -o trans=virtio,version=9p2000.L "$tag_name" /root 2>/dev/null && return 0
+    mount -t 9p "$tag_name" /root 2>/dev/null && return 0
+    return 1
+}
+
 mount_root_share_once() {
-    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null && return 0
-    mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null && return 0
-    mount -t 9p host9p /root 2>/dev/null && return 0
+    tag_name="$(discover_root_share_tag)"
+    mount_root_share_with_tag "$tag_name" && return 0
+    if [ "$tag_name" != "host9p" ]; then
+        mount_root_share_with_tag "host9p" && return 0
+    fi
     return 1
 }
 
 mount_root_share() {
 
     mkdir -p /root
+    load_root_share_modules
     # Virtio-9p device can appear slightly after init starts; retry briefly.
     attempts=20
     while [ "$attempts" -gt 0 ]; do
@@ -88,6 +130,9 @@ mount_root_share() {
         while [ "$bg_attempts" -lt 300 ]; do
             if is_root_share_mounted; then
                 exit 0
+            fi
+            if [ $((bg_attempts % 10)) -eq 0 ]; then
+                load_root_share_modules
             fi
             if mount_root_share_once; then
                 echo "Mounted host9p on /root (background)"
