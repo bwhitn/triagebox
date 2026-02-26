@@ -1,0 +1,35 @@
+#!/bin/sh
+# Ensure optional background daemons stay disabled in this short-lived VM profile.
+
+set -eu
+
+case "$1" in
+    start)
+        # Prevent future restarts via rcS scripts if present.
+        for s in \
+            /etc/init.d/S01syslogd \
+            /etc/init.d/S02syslogd \
+            /etc/init.d/S02klogd \
+            /etc/init.d/S03klogd \
+            /etc/init.d/S90crond \
+            /etc/init.d/S95crond
+        do
+            [ -e "$s" ] || continue
+            chmod -x "$s" 2>/dev/null || true
+        done
+
+        # Stop anything already started earlier in boot.
+        for p in syslogd klogd crond; do
+            killall -q "$p" 2>/dev/null || true
+            pidof "$p" >/dev/null 2>&1 && kill -9 "$(pidof "$p")" 2>/dev/null || true
+        done
+        ;;
+    stop|restart|reload)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

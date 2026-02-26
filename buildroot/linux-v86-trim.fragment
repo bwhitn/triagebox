@@ -37,6 +37,16 @@ CONFIG_THERMAL=n
 CONFIG_COMPACTION=n
 CONFIG_MODULES=n
 
+# Lower periodic timer overhead for this single-vCPU appliance profile.
+CONFIG_HZ_100=y
+# CONFIG_HZ_250 is not set
+# CONFIG_HZ_300 is not set
+# CONFIG_HZ_1000 is not set
+CONFIG_HZ=100
+CONFIG_NO_HZ_COMMON=y
+CONFIG_NO_HZ_IDLE=y
+# CONFIG_NO_HZ_FULL is not set
+
 # Use full configured RAM on 32-bit target by enabling highmem.
 CONFIG_HIGHMEM4G=y
 
