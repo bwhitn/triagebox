@@ -48,6 +48,7 @@ BUILD_LEGAL_INFO="${BUILD_LEGAL_INFO:-0}"
 LEGAL_INFO_ARCHIVE="${LEGAL_INFO_ARCHIVE:-${ASSETS_DIR}/buildroot-legal-info.tar.gz}"
 INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
 BUILDROOT_ONLY="${BUILDROOT_ONLY:-all}" # all|kernel
+FORCE_TARGET_FINALIZE="${FORCE_TARGET_FINALIZE:-1}" # 0|1, force overlay/finalize refresh on resume
 
 EXTRA_MB="${EXTRA_MB:-8}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
@@ -107,6 +108,10 @@ if [[ "${BUILDROOT_ONLY}" != "all" ]] && [[ "${BUILDROOT_ONLY}" != "kernel" ]]; 
 fi
 if [[ "${PYTHON_MODULE_FORMAT}" != "pyc" ]] && [[ "${PYTHON_MODULE_FORMAT}" != "py" ]] && [[ "${PYTHON_MODULE_FORMAT}" != "both" ]]; then
     echo "PYTHON_MODULE_FORMAT must be 'pyc', 'py', or 'both' (got: ${PYTHON_MODULE_FORMAT})" >&2
+    exit 1
+fi
+if [[ "${FORCE_TARGET_FINALIZE}" != "0" ]] && [[ "${FORCE_TARGET_FINALIZE}" != "1" ]]; then
+    echo "FORCE_TARGET_FINALIZE must be 0 or 1 (got: ${FORCE_TARGET_FINALIZE})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -775,6 +780,16 @@ if [[ "${BUILDROOT_ONLY}" == "kernel" ]]; then
         linux-rebuild \
         -j"${BUILDROOT_JOBS}"
 else
+    if [[ "${FORCE_TARGET_FINALIZE}" == "1" ]]; then
+        # Buildroot does not always re-run target-finalize when only overlay files
+        # changed, especially on resume builds. Drop finalize/image stamps so updated
+        # overlay/profile/login scripts are guaranteed to land in rootfs artifacts.
+        rm -f \
+            "${OUT_DIR}/build/buildroot-fs/.stamp_target_finalized" \
+            "${OUT_DIR}/build/buildroot-fs/.stamp_target_installed" \
+            "${OUT_DIR}/build/buildroot-fs/.stamp_images_installed" \
+            2>/dev/null || true
+    fi
     echo "[4/8] Building Buildroot output (jobs=${BUILDROOT_JOBS})"
     make -C "${BUILDROOT_SRC}" \
         O="${OUT_DIR}" \
