@@ -10,6 +10,7 @@ fi
 # Keep Python startup predictable and avoid writing bytecode on ephemeral FS.
 export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 export PYTHONDONTWRITEBYTECODE="${PYTHONDONTWRITEBYTECODE:-1}"
+export PYTHONOPTIMIZE="${PYTHONOPTIMIZE:-1}"
 
 is_root_share_mounted() {
     grep -qs ' /root 9p ' /proc/mounts

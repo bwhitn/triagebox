@@ -50,6 +50,7 @@ INITRD_MODE="${INITRD_MODE:-minimal}" # minimal|full
 BUILDROOT_ONLY="${BUILDROOT_ONLY:-all}" # all|kernel
 FORCE_TARGET_FINALIZE="${FORCE_TARGET_FINALIZE:-1}" # 0|1, force overlay/finalize refresh on resume
 FORCE_REFINERY_REINSTALL="${FORCE_REFINERY_REINSTALL:-1}" # 0|1, force python-binary-refinery target reinstall
+PYTHON_SCRIPT_OPTIMIZE_ALL="${PYTHON_SCRIPT_OPTIMIZE_ALL:-1}" # 0|1, add -O to direct python shebang wrappers in /usr/bin
 
 EXTRA_MB="${EXTRA_MB:-8}"
 MIN_DISK_MB="${MIN_DISK_MB:-64}"
@@ -117,6 +118,10 @@ if [[ "${FORCE_TARGET_FINALIZE}" != "0" ]] && [[ "${FORCE_TARGET_FINALIZE}" != "
 fi
 if [[ "${FORCE_REFINERY_REINSTALL}" != "0" ]] && [[ "${FORCE_REFINERY_REINSTALL}" != "1" ]]; then
     echo "FORCE_REFINERY_REINSTALL must be 0 or 1 (got: ${FORCE_REFINERY_REINSTALL})" >&2
+    exit 1
+fi
+if [[ "${PYTHON_SCRIPT_OPTIMIZE_ALL}" != "0" ]] && [[ "${PYTHON_SCRIPT_OPTIMIZE_ALL}" != "1" ]]; then
+    echo "PYTHON_SCRIPT_OPTIMIZE_ALL must be 0 or 1 (got: ${PYTHON_SCRIPT_OPTIMIZE_ALL})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -231,6 +236,36 @@ verify_runtime_artifacts() {
     fi
 
     return 0
+}
+
+optimize_python_entrypoints() {
+    local tree_root="$1"
+    local bindir script head
+    local optimized_count=0
+
+    bindir="${tree_root}/usr/bin"
+    if [[ ! -d "${bindir}" ]]; then
+        return 0
+    fi
+
+    for script in "${bindir}"/*; do
+        [[ -f "${script}" ]] || continue
+        [[ -r "${script}" ]] || continue
+        head="$(head -n1 "${script}" 2>/dev/null || true)"
+        case "${head}" in
+            '#!/usr/bin/python'|'#!/usr/bin/python2'|'#!/usr/bin/python3'|\
+'#!/usr/bin/python3.'*|'#!/usr/bin/python2.'*)
+                sed -i -E '1s@^#!(.*python[0-9.]*)$@#!\1 -O@' "${script}" || continue
+                optimized_count=$((optimized_count + 1))
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+    if (( optimized_count > 0 )); then
+        echo "Optimized Python wrapper shebangs: ${optimized_count}"
+    fi
 }
 
 if [[ ! -d "${BUILDROOT_SRC}" ]]; then
@@ -1032,6 +1067,9 @@ rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}"
 tar -xf "${ROOTFS_TAR}" -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
 generate_refinery_units_cache "${EXPORT_DIR}"
+if [[ "${PYTHON_SCRIPT_OPTIMIZE_ALL}" == "1" ]]; then
+    optimize_python_entrypoints "${EXPORT_DIR}"
+fi
 if [[ "${VERIFY_RUNTIME_ARTIFACTS}" == "1" ]]; then
     verify_runtime_artifacts "${EXPORT_DIR}"
 fi
@@ -1093,6 +1131,7 @@ buildroot_version=${BUILDROOT_VERSION}
 buildroot_defconfig=${BUILDROOT_DEFCONFIG}
 buildroot_resume=${BUILDROOT_RESUME}
 build_profile=${BUILD_PROFILE}
+python_script_optimize_all=${PYTHON_SCRIPT_OPTIMIZE_ALL}
 buildroot_global_patch_dir=${BUILDROOT_GLOBAL_PATCH_DIR}
 prefetch_downloads=${PREFETCH_DOWNLOADS}
 prefetch_refinery_wheels=${PREFETCH_REFINERY_WHEELS}
