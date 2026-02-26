@@ -10,8 +10,9 @@ mount -t tmpfs tmpfs /run 2>/dev/null || true
 chmod 1777 /tmp 2>/dev/null || true
 if command -v ip >/dev/null 2>&1; then
     ip link set lo up 2>/dev/null || true
+    ip addr add 127.0.0.1/8 dev lo 2>/dev/null || ip addr replace 127.0.0.1/8 dev lo 2>/dev/null || true
 elif command -v ifconfig >/dev/null 2>&1; then
-    ifconfig lo up 2>/dev/null || true
+    ifconfig lo 127.0.0.1 netmask 255.0.0.0 up 2>/dev/null || ifconfig lo up 2>/dev/null || true
 fi
 
 case "${TERM:-}" in
@@ -52,17 +53,18 @@ set_term_dimensions() {
 
 set_term_dimensions
 
-mount_root_share() {
-    is_root_share_mounted() {
-        grep -qs ' /root 9p ' /proc/mounts
-    }
+is_root_share_mounted() {
+    grep -qs ' /root 9p ' /proc/mounts
+}
 
-    mount_root_share_once() {
-        mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null && return 0
-        mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null && return 0
-        mount -t 9p host9p /root 2>/dev/null && return 0
-        return 1
-    }
+mount_root_share_once() {
+    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null && return 0
+    mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null && return 0
+    mount -t 9p host9p /root 2>/dev/null && return 0
+    return 1
+}
+
+mount_root_share() {
 
     mkdir -p /root
     # Virtio-9p device can appear slightly after init starts; retry briefly.

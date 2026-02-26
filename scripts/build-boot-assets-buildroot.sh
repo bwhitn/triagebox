@@ -844,6 +844,8 @@ export PATH=/bin:/sbin
 /bin/busybox mount -t proc proc /proc 2>/dev/null || true
 /bin/busybox mount -t sysfs sysfs /sys 2>/dev/null || true
 /bin/busybox mount -t tmpfs tmpfs /run 2>/dev/null || true
+/bin/busybox ip link set lo up 2>/dev/null || true
+/bin/busybox ip addr add 127.0.0.1/8 dev lo 2>/dev/null || /bin/busybox ip addr replace 127.0.0.1/8 dev lo 2>/dev/null || /bin/busybox ifconfig lo 127.0.0.1 netmask 255.0.0.0 up 2>/dev/null || /bin/busybox ifconfig lo up 2>/dev/null || true
 /bin/busybox mkdir -p /newroot
 
 root_dev=""
