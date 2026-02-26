@@ -190,8 +190,11 @@ Missing Buildroot target coverage report is at `http://localhost:8080/assets/bin
 Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
 The UI import workflow is non-persistent:
 - `Stage Non-Persistent Boot Import` registers a server file/path mapping and injects it over serial into the running VM.
-- The import is automatically re-applied on each boot start in the browser session.
-- `Clear Staged Imports` removes all staged mappings from browser storage.
+- If VM is stopped, staged imports are applied on next boot only, then cleared automatically.
+- If VM is running, import is applied immediately to the current boot only.
+- `Clear Staged Imports` removes all currently staged mappings.
+- `Start /root Monitor` polls `/root` while VM is running and highlights newly appeared files.
+- Each monitored `/root` file can be downloaded live through serial/base64 without touching disk images.
 - The Buildroot disk image file is not modified by this workflow.
 Server import source root defaults to `public/` and can be changed with `DISK_IMPORT_ROOT`.
 Large files are intentionally capped for runtime serial injection (`MAX_RUNTIME_IMPORT_BYTES` in `public/app.js`).

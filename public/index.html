@@ -36,7 +36,13 @@
           <button id="inject-disk-file-btn" type="button">Stage Non-Persistent Boot Import</button>
           <button id="clear-boot-imports-btn" type="button">Clear Staged Imports</button>
         </div>
+        <div class="controls">
+          <button id="root-watch-toggle" type="button">Start /root Monitor</button>
+          <input id="root-watch-seconds" type="number" min="1" value="3" title="Monitor interval (seconds)">
+        </div>
         <p id="disk-status">disk: non-persistent import mode</p>
+        <p id="root-watch-status">monitor: idle</p>
+        <ul id="root-watch-list" class="disk-files-list"></ul>
       </section>
 
       <section class="panel" id="special-keys-panel">

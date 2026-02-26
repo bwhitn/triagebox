@@ -50,6 +50,10 @@
   const injectDiskPathEl = document.getElementById("inject-disk-path");
   const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
   const clearBootImportsBtn = document.getElementById("clear-boot-imports-btn");
+  const rootWatchToggleBtn = document.getElementById("root-watch-toggle");
+  const rootWatchSecondsEl = document.getElementById("root-watch-seconds");
+  const rootWatchStatusEl = document.getElementById("root-watch-status");
+  const rootWatchListEl = document.getElementById("root-watch-list");
   const diskStatusEl = document.getElementById("disk-status");
 
   const defaultBootDiskImage = config.diskImage || "assets/buildroot-linux.img";
@@ -69,9 +73,20 @@
   let downloadFileCount = 0;
   let sawDownloadProgress = false;
   let diskStateReady = Promise.resolve();
-  const BOOT_IMPORTS_STORAGE_KEY = "nixbrowser.boot_imports.v1";
   let bootImports = [];
   let bootImportInFlight = false;
+  let bootImportRetryTimer = null;
+  let bootImportRetryStopTimer = null;
+  let rootWatchEnabled = false;
+  let rootWatchTimer = null;
+  let rootWatchPending = false;
+  let rootWatchBuffer = "";
+  let rootWatchPendingTimer = null;
+  let rootWatchKnownNames = new Set();
+  let rootDownloadInFlight = false;
+  let rootDownloadTargetName = "";
+  let rootDownloadTimeout = null;
+  let preferSerialCharStream = false;
   const specialKeySerialBytes = {
     ctrl_c: [0x03],
     ctrl_d: [0x04],
@@ -104,6 +119,14 @@
     alt_f2: [0x38, 0x3c, 0xbc, 0xb8]
   };
   const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
+  const ROOT_WATCH_BEGIN = "__NB_ROOTWATCH_BEGIN__";
+  const ROOT_WATCH_END = "__NB_ROOTWATCH_END__";
+  const ROOT_GET_BEGIN = "__NB_ROOTGET_BEGIN__";
+  const ROOT_GET_END = "__NB_ROOTGET_END__";
+  const ROOT_WATCH_BEGIN_PRINTF = markerToPrintfEscapes(ROOT_WATCH_BEGIN);
+  const ROOT_WATCH_END_PRINTF = markerToPrintfEscapes(ROOT_WATCH_END);
+  const ROOT_GET_BEGIN_PRINTF = markerToPrintfEscapes(ROOT_GET_BEGIN);
+  const ROOT_GET_END_PRINTF = markerToPrintfEscapes(ROOT_GET_END);
 
   function setStatus(text) {
     statusEl.textContent = `status: ${text}`;
@@ -118,6 +141,29 @@
       return;
     }
     diskStatusEl.textContent = `disk: ${text}`;
+  }
+
+  function setRootWatchStatus(text) {
+    if (!rootWatchStatusEl) {
+      return;
+    }
+    rootWatchStatusEl.textContent = `monitor: ${text}`;
+  }
+
+  function updateRootWatchToggleButton() {
+    if (!rootWatchToggleBtn) {
+      return;
+    }
+    rootWatchToggleBtn.textContent = rootWatchEnabled ? "Stop /root Monitor" : "Start /root Monitor";
+  }
+
+  function rootWatchIntervalMs() {
+    const raw = Number.parseInt(rootWatchSecondsEl?.value || "3", 10);
+    const seconds = Number.isFinite(raw) ? Math.max(1, raw) : 3;
+    if (rootWatchSecondsEl) {
+      rootWatchSecondsEl.value = String(seconds);
+    }
+    return seconds * 1000;
   }
 
   function parentDiskPath(path) {
@@ -282,36 +328,11 @@
     return btoa(binary);
   }
 
-  function loadBootImports() {
-    try {
-      const raw = window.localStorage.getItem(BOOT_IMPORTS_STORAGE_KEY);
-      if (!raw) {
-        bootImports = [];
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        bootImports = [];
-        return;
-      }
-      bootImports = parsed
-        .filter((entry) => entry && typeof entry === "object")
-        .map((entry) => ({
-          srcPath: String(entry.srcPath || "").trim(),
-          targetPath: String(entry.targetPath || "").trim()
-        }))
-        .filter((entry) => entry.srcPath.length > 0 && entry.targetPath.length > 0);
-    } catch (err) {
-      bootImports = [];
-    }
-  }
-
-  function saveBootImports() {
-    try {
-      window.localStorage.setItem(BOOT_IMPORTS_STORAGE_KEY, JSON.stringify(bootImports));
-    } catch (err) {
-      // best-effort persistence only
-    }
+  function markerToPrintfEscapes(marker) {
+    const chars = Array.from(String(marker || ""));
+    return chars
+      .map((ch) => `\\${ch.charCodeAt(0).toString(8).padStart(3, "0")}`)
+      .join("");
   }
 
   function upsertBootImport(srcPath, targetPath) {
@@ -322,13 +343,12 @@
     } else {
       bootImports.push(item);
     }
-    saveBootImports();
   }
 
   function clearBootImports() {
     bootImports = [];
-    saveBootImports();
-    setDiskStatus("cleared staged boot imports");
+    stopBootImportRetryLoop();
+    setDiskStatus("cleared staged one-shot boot imports");
   }
 
   function buildRuntimeImportScript(targetPath, base64Data) {
@@ -377,7 +397,10 @@
         await stageImportIntoRunningVm(entry.srcPath, entry.targetPath);
       }
       if (source === "boot") {
-        setDiskStatus(`applied ${bootImports.length} boot import(s)`);
+        const applied = bootImports.length;
+        bootImports = [];
+        stopBootImportRetryLoop();
+        setDiskStatus(`applied ${applied} one-shot boot import(s)`);
       } else {
         setDiskStatus(`import staged; ${bootImports.length} boot import(s) active`);
       }
@@ -388,6 +411,32 @@
     } finally {
       bootImportInFlight = false;
     }
+  }
+
+  function stopBootImportRetryLoop() {
+    if (bootImportRetryTimer) {
+      window.clearInterval(bootImportRetryTimer);
+      bootImportRetryTimer = null;
+    }
+    if (bootImportRetryStopTimer) {
+      window.clearTimeout(bootImportRetryStopTimer);
+      bootImportRetryStopTimer = null;
+    }
+  }
+
+  function startBootImportRetryLoop() {
+    stopBootImportRetryLoop();
+    if (bootImports.length === 0) {
+      return;
+    }
+    const tick = () => {
+      void applyBootImportsToRunningVm("boot");
+    };
+    tick();
+    bootImportRetryTimer = window.setInterval(tick, 3000);
+    bootImportRetryStopTimer = window.setTimeout(() => {
+      stopBootImportRetryLoop();
+    }, 30000);
   }
 
   function basename(path) {
@@ -443,16 +492,21 @@
     if (injectDiskFileBtn) {
       injectDiskFileBtn.disabled = true;
     }
-    setDiskStatus(`staging ${srcPath} -> ${targetPath} (non-persistent boot import)...`);
+    setDiskStatus(`staging ${srcPath} -> ${targetPath} (one-shot, non-persistent)...`);
     try {
-      upsertBootImport(srcPath, targetPath);
       if (hasRunningVm()) {
         const size = await stageImportIntoRunningVm(srcPath, targetPath);
-        setDiskStatus(`imported to running VM (${formatBytes(size)}); will reapply on next boot`);
-        setStatus("running (non-persistent import applied)");
+        setDiskStatus(`imported to running VM (${formatBytes(size)}); current boot only`);
+        setStatus("running (one-shot import applied)");
+        if (rootWatchEnabled) {
+          window.setTimeout(() => {
+            requestRootWatchScan();
+          }, 500);
+        }
       } else {
-        setDiskStatus(`queued for next boot (${bootImports.length} import(s) configured)`);
-        setStatus("idle (import queued; start VM to apply)");
+        upsertBootImport(srcPath, targetPath);
+        setDiskStatus(`queued for next boot only (${bootImports.length} staged import(s))`);
+        setStatus("idle (one-shot boot import queued)");
       }
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
@@ -469,11 +523,20 @@
     if (!diskPanelEl) {
       return;
     }
-    loadBootImports();
-    if (bootImports.length > 0) {
-      setDiskStatus(`non-persistent boot imports configured: ${bootImports.length}`);
+    rootWatchKnownNames = new Set();
+    if (rootWatchListEl) {
+      rootWatchListEl.textContent = "";
+    }
+    updateRootWatchToggleButton();
+    if (rootWatchEnabled) {
+      setRootWatchStatus("waiting for VM start...");
     } else {
-      setDiskStatus("non-persistent mode: add a server file import and start VM");
+      setRootWatchStatus("idle");
+    }
+    if (bootImports.length > 0) {
+      setDiskStatus(`one-shot boot imports queued: ${bootImports.length}`);
+    } else {
+      setDiskStatus("non-persistent one-shot mode: stage import, then start VM");
     }
   }
 
@@ -681,6 +744,311 @@
     return sendSerialBytes(encoder.encode(text));
   }
 
+  function renderRootWatchList(names, newNamesSet = new Set()) {
+    if (!rootWatchListEl) {
+      return;
+    }
+    rootWatchListEl.textContent = "";
+    for (const name of names) {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.className = "disk-file-name";
+      label.textContent = newNamesSet.has(name) ? `[new] ${name}` : name;
+      item.appendChild(label);
+
+      const actions = document.createElement("span");
+      actions.className = "disk-file-actions";
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.textContent = "Download";
+      downloadBtn.disabled = rootDownloadInFlight;
+      downloadBtn.addEventListener("click", () => {
+        void requestRootFileDownload(name);
+      });
+      actions.appendChild(downloadBtn);
+      item.appendChild(actions);
+      rootWatchListEl.appendChild(item);
+    }
+  }
+
+  function stopRootWatchPolling() {
+    if (rootWatchTimer) {
+      window.clearInterval(rootWatchTimer);
+      rootWatchTimer = null;
+    }
+    if (rootWatchPendingTimer) {
+      window.clearTimeout(rootWatchPendingTimer);
+      rootWatchPendingTimer = null;
+    }
+    rootWatchPending = false;
+  }
+
+  function refreshRootWatchPolling() {
+    stopRootWatchPolling();
+    if (!rootWatchEnabled || !hasRunningVm()) {
+      return;
+    }
+    rootWatchTimer = window.setInterval(() => {
+      requestRootWatchScan();
+    }, rootWatchIntervalMs());
+  }
+
+  function requestRootWatchScan() {
+    if (!rootWatchEnabled || !hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
+      return;
+    }
+    rootWatchPending = true;
+    if (rootWatchPendingTimer) {
+      window.clearTimeout(rootWatchPendingTimer);
+    }
+    rootWatchPendingTimer = window.setTimeout(() => {
+      rootWatchPending = false;
+      rootWatchPendingTimer = null;
+      if (rootWatchEnabled) {
+        setRootWatchStatus("scan timeout; retrying...");
+      }
+    }, 4000);
+
+    const cmd = [
+      "",
+      `printf '${ROOT_WATCH_BEGIN_PRINTF}\\n'`,
+      "for __nb_entry in /root/.??* /root/*; do",
+      "  [ -e \"$__nb_entry\" ] || continue",
+      "  __nb_name=\"${__nb_entry##*/}\"",
+      "  printf '%s\\n' \"$__nb_name\"",
+      "done",
+      `printf '${ROOT_WATCH_END_PRINTF}\\n'`,
+      ""
+    ].join("\n");
+    if (!sendSerialText(cmd)) {
+      rootWatchPending = false;
+      if (rootWatchPendingTimer) {
+        window.clearTimeout(rootWatchPendingTimer);
+        rootWatchPendingTimer = null;
+      }
+      setRootWatchStatus("monitor unavailable (serial not ready)");
+    }
+  }
+
+  function decodeBase64Payload(payload) {
+    const lines = String(payload || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const normalized = lines
+      .filter((line) => /^[A-Za-z0-9+/=]+$/.test(line))
+      .join("");
+    if (!normalized) {
+      throw new Error("empty payload");
+    }
+    const binary = atob(normalized);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      out[i] = binary.charCodeAt(i) & 0xff;
+    }
+    return out;
+  }
+
+  function triggerBrowserDownload(bytes, filename) {
+    const blob = new Blob([bytes], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "root-file.bin";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  async function requestRootFileDownload(name) {
+    if (!hasRunningVm()) {
+      setRootWatchStatus("start VM first to download files");
+      return;
+    }
+    if (rootDownloadInFlight) {
+      setRootWatchStatus("download already in progress");
+      return;
+    }
+    rootDownloadInFlight = true;
+    rootDownloadTargetName = name;
+    setRootWatchStatus(`downloading /root/${name}...`);
+    if (rootDownloadTimeout) {
+      window.clearTimeout(rootDownloadTimeout);
+    }
+    rootDownloadTimeout = window.setTimeout(() => {
+      if (!rootDownloadInFlight) {
+        return;
+      }
+      rootDownloadInFlight = false;
+      rootDownloadTargetName = "";
+      setRootWatchStatus("download timeout");
+    }, 15000);
+
+    const path = `/root/${name}`;
+    const cmd = [
+      "",
+      `printf '${ROOT_GET_BEGIN_PRINTF}\\n'`,
+      `(base64 < ${shellQuote(path)} 2>/dev/null || busybox base64 < ${shellQuote(path)} 2>/dev/null)`,
+      `printf '\\n${ROOT_GET_END_PRINTF}\\n'`,
+      ""
+    ].join("\n");
+    if (!sendSerialText(cmd)) {
+      if (rootDownloadTimeout) {
+        window.clearTimeout(rootDownloadTimeout);
+        rootDownloadTimeout = null;
+      }
+      rootDownloadInFlight = false;
+      rootDownloadTargetName = "";
+      setRootWatchStatus("download failed (serial not ready)");
+    }
+  }
+
+  function handleRootWatchPayload(payload) {
+    const names = payload
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter((line) => line !== "." && line !== "..");
+    names.sort((a, b) => a.localeCompare(b));
+
+    const nextSet = new Set(names);
+    const newNames = names.filter((name) => !rootWatchKnownNames.has(name));
+    rootWatchKnownNames = nextSet;
+    renderRootWatchList(names, new Set(newNames));
+
+    if (rootWatchPendingTimer) {
+      window.clearTimeout(rootWatchPendingTimer);
+      rootWatchPendingTimer = null;
+    }
+    rootWatchPending = false;
+    const now = new Date().toLocaleTimeString();
+    if (newNames.length > 0) {
+      setRootWatchStatus(`${names.length} entries (${newNames.length} new) @ ${now}`);
+    } else {
+      setRootWatchStatus(`${names.length} entries @ ${now}`);
+    }
+  }
+
+  function handleRootDownloadPayload(payload) {
+    if (!rootDownloadInFlight) {
+      return;
+    }
+    try {
+      const bytes = decodeBase64Payload(payload);
+      const filename = rootDownloadTargetName || "root-file.bin";
+      triggerBrowserDownload(bytes, filename);
+      setRootWatchStatus(`downloaded ${filename} (${formatBytes(bytes.byteLength)})`);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setRootWatchStatus(`download failed (${msg})`);
+    } finally {
+      if (rootDownloadTimeout) {
+        window.clearTimeout(rootDownloadTimeout);
+        rootDownloadTimeout = null;
+      }
+      rootDownloadInFlight = false;
+      rootDownloadTargetName = "";
+      if (rootWatchEnabled) {
+        requestRootWatchScan();
+      }
+    }
+  }
+
+  function consumeSerialMarkerBuffer() {
+    while (true) {
+      const watchIdx = rootWatchBuffer.indexOf(ROOT_WATCH_BEGIN);
+      const getIdx = rootWatchBuffer.indexOf(ROOT_GET_BEGIN);
+      let mode = "";
+      let startIdx = -1;
+      if (watchIdx >= 0 && (getIdx < 0 || watchIdx < getIdx)) {
+        mode = "watch";
+        startIdx = watchIdx;
+      } else if (getIdx >= 0) {
+        mode = "get";
+        startIdx = getIdx;
+      } else {
+        if (rootWatchBuffer.length > 4096) {
+          rootWatchBuffer = rootWatchBuffer.slice(-1024);
+        }
+        return;
+      }
+
+      if (startIdx > 0) {
+        rootWatchBuffer = rootWatchBuffer.slice(startIdx);
+      }
+
+      const begin = mode === "watch" ? ROOT_WATCH_BEGIN : ROOT_GET_BEGIN;
+      const end = mode === "watch" ? ROOT_WATCH_END : ROOT_GET_END;
+      const endIdx = rootWatchBuffer.indexOf(end, begin.length);
+      if (endIdx < 0) {
+        if (rootWatchBuffer.length > 65536) {
+          rootWatchBuffer = rootWatchBuffer.slice(0, begin.length);
+        }
+        return;
+      }
+
+      const payload = rootWatchBuffer.slice(begin.length, endIdx);
+      rootWatchBuffer = rootWatchBuffer.slice(endIdx + end.length);
+
+      if (mode === "watch") {
+        handleRootWatchPayload(payload);
+      } else {
+        handleRootDownloadPayload(payload);
+      }
+    }
+  }
+
+  function appendSerialCaptureText(text) {
+    if (!text) {
+      return;
+    }
+    rootWatchBuffer += text;
+    consumeSerialMarkerBuffer();
+  }
+
+  function handleSerialOutputByte(value) {
+    if (preferSerialCharStream) {
+      return;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return;
+    }
+    appendSerialCaptureText(String.fromCharCode(value & 0xff));
+  }
+
+  function handleSerialOutputChar(value) {
+    preferSerialCharStream = true;
+    if (typeof value === "string") {
+      appendSerialCaptureText(value);
+      return;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      appendSerialCaptureText(String.fromCharCode(value & 0xff));
+    }
+  }
+
+  function startRootMonitor() {
+    rootWatchEnabled = true;
+    updateRootWatchToggleButton();
+    if (!hasRunningVm()) {
+      setRootWatchStatus("waiting for VM start...");
+      return;
+    }
+    setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
+    refreshRootWatchPolling();
+    requestRootWatchScan();
+  }
+
+  function stopRootMonitor() {
+    rootWatchEnabled = false;
+    updateRootWatchToggleButton();
+    stopRootWatchPolling();
+    setRootWatchStatus("idle");
+  }
+
   async function sendSpecialKeys(name) {
     if (!hasRunningVm()) {
       setStatus("stopped (start VM first)");
@@ -802,6 +1170,12 @@
     emulator.add_listener("download-error", (info) => {
       handleDownloadError(info);
     });
+    emulator.add_listener("serial0-output-byte", (value) => {
+      handleSerialOutputByte(value);
+    });
+    emulator.add_listener("serial0-output-char", (value) => {
+      handleSerialOutputChar(value);
+    });
 
     emulator.add_listener("emulator-ready", () => {
       setStatus("ready");
@@ -861,19 +1235,42 @@
     emulator.add_listener("emulator-started", () => {
       setStatus("running");
       startSampling();
-      if (bootImports.length > 0) {
+      startBootImportRetryLoop();
+      rootWatchBuffer = "";
+      rootWatchKnownNames = new Set();
+      preferSerialCharStream = false;
+      if (rootWatchListEl) {
+        rootWatchListEl.textContent = "";
+      }
+      if (rootWatchEnabled) {
+        setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
+        refreshRootWatchPolling();
         window.setTimeout(() => {
-          void applyBootImportsToRunningVm("boot");
+          requestRootWatchScan();
         }, 1500);
-        window.setTimeout(() => {
-          void applyBootImportsToRunningVm("boot");
-        }, 4500);
       }
     });
 
     emulator.add_listener("emulator-stopped", () => {
       setStatus("stopped");
       stopSampling();
+      stopBootImportRetryLoop();
+      stopRootWatchPolling();
+      rootWatchBuffer = "";
+      rootWatchKnownNames = new Set();
+      preferSerialCharStream = false;
+      if (rootWatchListEl) {
+        rootWatchListEl.textContent = "";
+      }
+      if (rootDownloadTimeout) {
+        window.clearTimeout(rootDownloadTimeout);
+        rootDownloadTimeout = null;
+      }
+      rootDownloadInFlight = false;
+      rootDownloadTargetName = "";
+      if (rootWatchEnabled) {
+        setRootWatchStatus("waiting for VM start...");
+      }
     });
 
     return emulator;
@@ -948,6 +1345,23 @@
   if (clearBootImportsBtn) {
     clearBootImportsBtn.addEventListener("click", () => {
       clearBootImports();
+    });
+  }
+  if (rootWatchToggleBtn) {
+    rootWatchToggleBtn.addEventListener("click", () => {
+      if (rootWatchEnabled) {
+        stopRootMonitor();
+      } else {
+        startRootMonitor();
+      }
+    });
+  }
+  if (rootWatchSecondsEl) {
+    rootWatchSecondsEl.addEventListener("change", () => {
+      if (rootWatchEnabled) {
+        refreshRootWatchPolling();
+        setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
+      }
     });
   }
   if (serialFullscreenBtn) {
