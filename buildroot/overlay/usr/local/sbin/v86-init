@@ -54,18 +54,26 @@ set_term_dimensions
 
 mount_root_share() {
     mkdir -p /root
-    if mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null; then
-        echo "Mounted host9p on /root"
-        return 0
-    fi
-    if mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null; then
-        echo "Mounted host9p on /root"
-        return 0
-    fi
-    if mount -t 9p host9p /root 2>/dev/null; then
-        echo "Mounted host9p on /root"
-        return 0
-    fi
+    # Virtio-9p device can appear slightly after init starts; retry briefly.
+    attempts=40
+    while [ "$attempts" -gt 0 ]; do
+        if mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root 2>/dev/null; then
+            echo "Mounted host9p on /root"
+            return 0
+        fi
+        if mount -t 9p -o trans=virtio,version=9p2000.L host9p /root 2>/dev/null; then
+            echo "Mounted host9p on /root"
+            return 0
+        fi
+        if mount -t 9p host9p /root 2>/dev/null; then
+            echo "Mounted host9p on /root"
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        sleep 0.25
+    done
+    echo "Warning: failed to mount host9p on /root" >&2
+    mount -t 9p -o trans=virtio,version=9p2000.L,cache=loose,msize=262144 host9p /root || true
     return 1
 }
 
