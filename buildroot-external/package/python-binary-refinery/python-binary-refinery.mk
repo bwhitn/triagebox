@@ -11,6 +11,7 @@ PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH ?= 0
 PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY ?= manylinux_2_28_i686
 PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK ?= manylinux2014_i686
 PYTHON_BINARY_REFINERY_COMMAND_PREFIX ?= ref-
+PYTHON_BINARY_REFINERY_PYTHON_OPTIMIZE ?= 1
 PYTHON_BINARY_REFINERY_SOURCE = binary_refinery-$(PYTHON_BINARY_REFINERY_VERSION).tar.gz
 PYTHON_BINARY_REFINERY_SITE = https://files.pythonhosted.org/packages/source/b/binary-refinery
 PYTHON_BINARY_REFINERY_LICENSE = MIT
@@ -215,6 +216,7 @@ define PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 	tmpdir="$(@D)/.scripts"; \
 	bindir="$(TARGET_DIR)/usr/bin"; \
 	prefix="$(PYTHON_BINARY_REFINERY_COMMAND_PREFIX)"; \
+	optimize="$(PYTHON_BINARY_REFINERY_PYTHON_OPTIMIZE)"; \
 	if [ -d "$$tmpdir" ]; then \
 		mkdir -p "$$bindir"; \
 		for src in "$$tmpdir"/*; do \
@@ -240,6 +242,10 @@ define PYTHON_BINARY_REFINERY_INSTALL_SCRIPTS
 			fi; \
 			mv "$$src" "$$dst"; \
 			chmod 0755 "$$dst"; \
+			if [ "$$optimize" = "1" ] && [ -f "$$dst" ] && \
+				head -n1 "$$dst" | grep -Eq '^#!.*/python([0-9.]*)?$$'; then \
+				$(SED) '1s@^#!.*python[0-9.]*$$@#!/usr/bin/python -O@' "$$dst"; \
+			fi; \
 		done; \
 		rmdir "$$tmpdir" 2>/dev/null || true; \
 	fi
