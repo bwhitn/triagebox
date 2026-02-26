@@ -10,6 +10,16 @@ need_cmd() {
     fi
 }
 
+need_node_cmd() {
+    if command -v node >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v nodejs >/dev/null 2>&1; then
+        return 0
+    fi
+    missing+=("node (or nodejs)")
+}
+
 # Core host tools for this project and Buildroot compilation.
 required_cmds=(
     awk
@@ -38,11 +48,13 @@ required_cmds=(
     unzip
     wc
     python3
+    npm
 )
 
 for cmd in "${required_cmds[@]}"; do
     need_cmd "${cmd}"
 done
+need_node_cmd
 
 prefetch_wheels="${PREFETCH_REFINERY_WHEELS:-1}"
 require_buildroot_target="${REFINERY_REQUIRE_BUILDROOT_TARGET:-1}"

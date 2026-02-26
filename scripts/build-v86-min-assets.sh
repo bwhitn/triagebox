@@ -10,6 +10,7 @@ V86_REF="${V86_REF:-master}"
 V86_GIT_UPDATE="${V86_GIT_UPDATE:-1}"
 V86_NPM_INSTALL="${V86_NPM_INSTALL:-ci}"
 V86_BUILD_COMMAND="${V86_BUILD_COMMAND:-auto}"
+NODE_BIN="${NODE_BIN:-}"
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -18,10 +19,32 @@ need_cmd() {
     }
 }
 
+resolve_node_bin() {
+    if [[ -n "${NODE_BIN}" ]]; then
+        command -v "${NODE_BIN}" >/dev/null 2>&1 || {
+            echo "Configured NODE_BIN not found in PATH: ${NODE_BIN}" >&2
+            exit 1
+        }
+        return 0
+    fi
+
+    if command -v node >/dev/null 2>&1; then
+        NODE_BIN="node"
+        return 0
+    fi
+    if command -v nodejs >/dev/null 2>&1; then
+        NODE_BIN="nodejs"
+        return 0
+    fi
+
+    echo "Missing required command: node (or nodejs)" >&2
+    exit 1
+}
+
 has_npm_script() {
     local pkg="$1"
     local script_name="$2"
-    node -e '
+    "${NODE_BIN}" -e '
 const fs = require("fs");
 const pkg = process.argv[1];
 const scriptName = process.argv[2];
@@ -44,10 +67,10 @@ resolve_source_dir() {
     mkdir -p "$(dirname "${WORK_DIR}")"
 
     if [[ ! -d "${WORK_DIR}/.git" ]]; then
-        echo "Cloning v86 source into ${WORK_DIR}"
+        echo "Cloning v86 source into ${WORK_DIR}" >&2
         git clone --depth 1 --branch "${V86_REF}" "${V86_REPO_URL}" "${WORK_DIR}"
     elif [[ "${V86_GIT_UPDATE}" == "1" ]]; then
-        echo "Updating v86 source in ${WORK_DIR} to ${V86_REF}"
+        echo "Updating v86 source in ${WORK_DIR} to ${V86_REF}" >&2
         git -C "${WORK_DIR}" fetch --depth 1 origin "${V86_REF}"
         git -C "${WORK_DIR}" checkout -q FETCH_HEAD
     fi
@@ -67,7 +90,7 @@ run_make_build() {
 run_npm_build() {
     local src="$1"
     local pkg="${src}/package.json"
-    need_cmd node
+    resolve_node_bin
     need_cmd npm
     [[ -f "${pkg}" ]] || {
         echo "Missing ${pkg}; cannot run npm build fallback." >&2

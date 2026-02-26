@@ -26,7 +26,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `mke2fs`, `e2fsck`, `resize2fs` (from `e2fsprogs`)
 - `python3` (required)
 - `python3-pip` (only required when `REFINERY_REQUIRE_BUILDROOT_TARGET=0` and `PREFETCH_REFINERY_WHEELS=1`)
-- `git`, `node`, `npm` (only required for `make build-v86-min`)
+- `git`, `node` (or `nodejs`), `npm`
 
 ## Build VM assets
 
@@ -166,6 +166,7 @@ make build-kernel-fast
 - `V86_GIT_UPDATE` (default `1`; set to `0` to skip updating an existing v86 source checkout)
 - `V86_BUILD_COMMAND` (default `auto`; override with a custom v86 build command)
 - `V86_NPM_INSTALL` (default `ci`; npm fallback mode: `ci`, `install`, or `skip`)
+- `NODE_BIN` (optional; explicit Node executable name/path for v86 source build)
 
 Binary-refinery note:
 
