@@ -56,6 +56,7 @@ AUTO_SHRINK="${AUTO_SHRINK:-1}"
 SHRINK_PAD_MB="${SHRINK_PAD_MB:-0}"
 SHRINK_MIN_MB="${SHRINK_MIN_MB:-0}"
 ROOTFS_RESERVED_BLOCKS_PERCENT="${ROOTFS_RESERVED_BLOCKS_PERCENT:-0}"
+VERIFY_RUNTIME_ARTIFACTS="${VERIFY_RUNTIME_ARTIFACTS:-1}"
 
 DISK_IMAGE="${ASSETS_DIR}/buildroot-linux.img"
 VMLINUX_OUT="${ASSETS_DIR}/vmlinuz"
@@ -141,6 +142,10 @@ if ! [[ "${ROOTFS_RESERVED_BLOCKS_PERCENT}" =~ ^[0-9]+$ ]] || (( ROOTFS_RESERVED
     echo "ROOTFS_RESERVED_BLOCKS_PERCENT must be an integer in [0, 50] (got: ${ROOTFS_RESERVED_BLOCKS_PERCENT})" >&2
     exit 1
 fi
+if [[ "${VERIFY_RUNTIME_ARTIFACTS}" != "0" ]] && [[ "${VERIFY_RUNTIME_ARTIFACTS}" != "1" ]]; then
+    echo "VERIFY_RUNTIME_ARTIFACTS must be 0 or 1 (got: ${VERIFY_RUNTIME_ARTIFACTS})" >&2
+    exit 1
+fi
 
 if [[ "${BUILDROOT_CCACHE}" == "1" ]]; then
     mkdir -p "${BUILDROOT_CCACHE_DIR}"
@@ -196,6 +201,26 @@ generate_refinery_units_cache() {
     fi
 
     rm -f "${map_file}"
+}
+
+verify_runtime_artifacts() {
+    local tree_root="$1"
+    local units_path
+
+    if [[ ! -x "${tree_root}/usr/bin/strace" ]]; then
+        echo "Expected runtime artifact missing: ${tree_root}/usr/bin/strace" >&2
+        echo "Hint: ensure BR2_PACKAGE_STRACE=y is in the active Buildroot .config." >&2
+        return 1
+    fi
+
+    units_path="$(find "${tree_root}/usr/lib" -maxdepth 6 -type f -path '*/site-packages/refinery/data/units.pkl' -print -quit 2>/dev/null || true)"
+    if [[ -z "${units_path}" ]]; then
+        echo "Expected runtime artifact missing: refinery/data/units.pkl" >&2
+        echo "Hint: python-binary-refinery install hooks did not generate cache." >&2
+        return 1
+    fi
+
+    return 0
 }
 
 if [[ ! -d "${BUILDROOT_SRC}" ]]; then
@@ -972,6 +997,9 @@ rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}"
 tar -xf "${ROOTFS_TAR}" -C "${EXPORT_DIR}" --exclude='dev/*' --exclude='./dev/*'
 generate_refinery_units_cache "${EXPORT_DIR}"
+if [[ "${VERIFY_RUNTIME_ARTIFACTS}" == "1" ]]; then
+    verify_runtime_artifacts "${EXPORT_DIR}"
+fi
 rm -rf "${EXPORT_DIR}/dev"
 mkdir -p "${EXPORT_DIR}/dev" "${EXPORT_DIR}/proc" "${EXPORT_DIR}/sys" "${EXPORT_DIR}/run" "${EXPORT_DIR}/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp"
