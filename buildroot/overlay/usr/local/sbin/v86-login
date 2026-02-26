@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+# Ensure root home is stable for auto-login shells.
+if [ "$(id -u)" -eq 0 ]; then
+    export HOME=/root
+    [ -d /root ] || mkdir -p /root
+fi
+
+# Show login banner/motd once per shell spawn.
+if [ -r /etc/motd ]; then
+    cat /etc/motd
+    echo ""
+fi
+
+exec /bin/sh -l
