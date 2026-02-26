@@ -45,28 +45,6 @@
         <ul id="root-watch-list" class="disk-files-list"></ul>
       </section>
 
-      <section class="panel" id="special-keys-panel">
-        <h2>Special Keys</h2>
-        <p>Use these when browser keyboard shortcuts interfere with guest input.</p>
-        <div class="controls" id="special-keys">
-          <button type="button" data-special-key="ctrl_alt_del">Ctrl+Alt+Del</button>
-          <button type="button" data-special-key="ctrl_c">Ctrl+C</button>
-          <button type="button" data-special-key="ctrl_d">Ctrl+D</button>
-          <button type="button" data-special-key="ctrl_z">Ctrl+Z</button>
-          <button type="button" data-special-key="ctrl_l">Ctrl+L</button>
-          <button type="button" data-special-key="esc">Esc</button>
-          <button type="button" data-special-key="tab">Tab</button>
-          <button type="button" data-special-key="up">Up</button>
-          <button type="button" data-special-key="down">Down</button>
-          <button type="button" data-special-key="left">Left</button>
-          <button type="button" data-special-key="right">Right</button>
-          <button type="button" data-special-key="pgup">PgUp</button>
-          <button type="button" data-special-key="pgdn">PgDn</button>
-          <button type="button" data-special-key="alt_f1">Alt+F1</button>
-          <button type="button" data-special-key="alt_f2">Alt+F2</button>
-        </div>
-      </section>
-
       <section class="panel" id="serial-panel">
         <div class="panel-header">
           <h2>Serial Console</h2>
@@ -89,6 +67,7 @@
 
     <script src="assets/xterm/xterm.js"></script>
     <script src="assets/xterm/xterm-addon-fit.js"></script>
+    <script src="assets/xterm/xterm-addon-keypad.js"></script>
     <script src="vm-config.js"></script>
     <script src="build-config.js"></script>
     <script>

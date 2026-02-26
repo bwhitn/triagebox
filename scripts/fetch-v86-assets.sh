@@ -7,6 +7,7 @@ XTERM_DIR="${ROOT_DIR}/public/assets/xterm"
 PRIMARY_BASE_URL="${V86_BASE_URL:-https://copy.sh/v86}"
 XTERM_VERSION="${XTERM_VERSION:-5.5.0}"
 XTERM_FIT_ADDON_VERSION="${XTERM_FIT_ADDON_VERSION:-0.10.0}"
+XTERM_KEYPAD_ADDON_VERSION="${XTERM_KEYPAD_ADDON_VERSION:-latest}"
 FETCH_VGA_BIOS="${FETCH_VGA_BIOS:-0}"
 
 if [[ "${FETCH_VGA_BIOS}" != "0" && "${FETCH_VGA_BIOS}" != "1" ]]; then
@@ -39,6 +40,21 @@ fetch_from_urls() {
     done
 
     echo "Failed to download into ${dest}" >&2
+    return 1
+}
+
+fetch_optional_from_urls() {
+    local dest="$1"
+    shift
+    local urls=("$@")
+
+    local url
+    for url in "${urls[@]}"; do
+        echo "Downloading ${url}"
+        if curl -fL "${url}" -o "${dest}"; then
+            return 0
+        fi
+    done
     return 1
 }
 
@@ -110,6 +126,44 @@ fetch_xterm_fit_addon() {
     fetch_from_urls "${XTERM_DIR}/${dest}" "${urls[@]}"
 }
 
+fetch_xterm_keypad_addon() {
+    local dest="$1"
+    local urls=(
+        "https://unpkg.com/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/dist/xtermjs-addon-keypad.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/dist/xtermjs-addon-keypad.js"
+        "https://unpkg.com/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/lib/xtermjs-addon-keypad.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/lib/xtermjs-addon-keypad.js"
+        "https://unpkg.com/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/xtermjs-addon-keypad.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/xtermjs-addon-keypad.js"
+        "https://unpkg.com/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/index.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/index.js"
+        "https://unpkg.com/xterm-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/dist/xterm-addon-keypad.js"
+        "https://cdn.jsdelivr.net/npm/xterm-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/dist/xterm-addon-keypad.js"
+        "https://unpkg.com/xterm-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/lib/xterm-addon-keypad.js"
+        "https://cdn.jsdelivr.net/npm/xterm-addon-keypad@${XTERM_KEYPAD_ADDON_VERSION}/lib/xterm-addon-keypad.js"
+        "https://unpkg.com/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/dist/xtermjs-addon-keyboard.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/dist/xtermjs-addon-keyboard.js"
+        "https://unpkg.com/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/lib/xtermjs-addon-keyboard.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/lib/xtermjs-addon-keyboard.js"
+        "https://unpkg.com/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/index.js"
+        "https://cdn.jsdelivr.net/npm/xtermjs-addon-keyboard@${XTERM_KEYPAD_ADDON_VERSION}/index.js"
+    )
+
+    if fetch_optional_from_urls "${XTERM_DIR}/${dest}" "${urls[@]}"; then
+        return 0
+    fi
+
+    echo "Warning: unable to fetch xterm keypad addon; writing stub ${dest}" >&2
+    cat >"${XTERM_DIR}/${dest}" <<'EOF'
+;(function(global){
+    if (!global) {
+        return;
+    }
+    global.__XTERM_KEYPAD_ADDON_MISSING__ = true;
+})(typeof window !== "undefined" ? window : this);
+EOF
+}
+
 fetch_v86 "build/libv86.js" "libv86.js"
 fetch_v86 "build/v86.wasm" "v86.wasm"
 fetch_v86 "bios/seabios.bin" "seabios.bin"
@@ -120,6 +174,7 @@ fi
 fetch_xterm "js" "xterm.js"
 fetch_xterm "css" "xterm.css"
 fetch_xterm_fit_addon "xterm-addon-fit.js"
+fetch_xterm_keypad_addon "xterm-addon-keypad.js"
 
 echo "v86 assets written to ${ASSETS_DIR}"
 echo "xterm assets written to ${XTERM_DIR}"

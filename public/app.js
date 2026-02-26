@@ -22,6 +22,32 @@
     }
     return null;
   })();
+  const xtermKeypadAddonCtor = (() => {
+    const candidates = [
+      window.XtermAddonKeypad,
+      window.XtermKeypadAddon,
+      window.KeypadAddon,
+      window.XtermjsAddonKeypad,
+      window.XtermJsAddonKeypad,
+      window.xtermAddonKeypad,
+      window.xtermjsAddonKeypad
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) {
+        continue;
+      }
+      if (typeof candidate === "function") {
+        return candidate;
+      }
+      if (typeof candidate.KeypadAddon === "function") {
+        return candidate.KeypadAddon;
+      }
+      if (typeof candidate.default === "function") {
+        return candidate.default;
+      }
+    }
+    return null;
+  })();
   const vgaEnabled = config.enableVga === true || (config.enableVga !== false && !serialEnabled);
   const mouseEnabled = config.enableMouse === true;
   const cdromEnabled = config.enableCdrom === true;
@@ -34,7 +60,6 @@
   const serialXtermWrapEl = document.getElementById("serial-xterm-wrap");
   const serialXtermEl = document.getElementById("serial-xterm");
   const vgaPanelEl = document.getElementById("vga-panel");
-  const specialKeyButtons = document.querySelectorAll("[data-special-key]");
   const serialUseXterm = serialEnabled && !!xtermCtor;
 
   const startBtn = document.getElementById("start");
@@ -69,6 +94,7 @@
   let serialResizeListenerBound = false;
   let serialFitRaf = 0;
   let serialFitAddon = null;
+  let serialKeypadAddon = null;
   let downloadHideTimer = null;
   let downloadFileProgress = new Map();
   let downloadFileCount = 0;
@@ -87,37 +113,6 @@
     const mb = Number.isFinite(raw) ? Math.max(64, raw) : 1024;
     return mb * 1024 * 1024;
   })();
-  const specialKeySerialBytes = {
-    ctrl_c: [0x03],
-    ctrl_d: [0x04],
-    ctrl_z: [0x1a],
-    ctrl_l: [0x0c],
-    esc: [0x1b],
-    tab: [0x09],
-    up: [0x1b, 0x5b, 0x41],
-    down: [0x1b, 0x5b, 0x42],
-    left: [0x1b, 0x5b, 0x44],
-    right: [0x1b, 0x5b, 0x43],
-    pgup: [0x1b, 0x5b, 0x35, 0x7e],
-    pgdn: [0x1b, 0x5b, 0x36, 0x7e]
-  };
-  const specialKeyKeyboardScancodes = {
-    ctrl_alt_del: [0x1d, 0x38, 0xe0, 0x53, 0xe0, 0xd3, 0xb8, 0x9d],
-    ctrl_c: [0x1d, 0x2e, 0xae, 0x9d],
-    ctrl_d: [0x1d, 0x20, 0xa0, 0x9d],
-    ctrl_z: [0x1d, 0x2c, 0xac, 0x9d],
-    ctrl_l: [0x1d, 0x26, 0xa6, 0x9d],
-    esc: [0x01, 0x81],
-    tab: [0x0f, 0x8f],
-    up: [0xe0, 0x48, 0xe0, 0xc8],
-    down: [0xe0, 0x50, 0xe0, 0xd0],
-    left: [0xe0, 0x4b, 0xe0, 0xcb],
-    right: [0xe0, 0x4d, 0xe0, 0xcd],
-    pgup: [0xe0, 0x49, 0xe0, 0xc9],
-    pgdn: [0xe0, 0x51, 0xe0, 0xd1],
-    alt_f1: [0x38, 0x3b, 0xbb, 0xb8],
-    alt_f2: [0x38, 0x3c, 0xbc, 0xb8]
-  };
   const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
   const ROOT_SHARE_PREFIX = "/root";
 
@@ -979,37 +974,6 @@
     setRootWatchStatus("idle");
   }
 
-  async function sendSpecialKeys(name) {
-    if (!hasRunningVm()) {
-      setStatus("stopped (start VM first)");
-      return;
-    }
-
-    try {
-      // In serial mode, send terminal control bytes first (e.g. Ctrl+C => 0x03).
-      const serialBytes = specialKeySerialBytes[name];
-      if (sendSerialBytes(serialBytes)) {
-        return;
-      }
-
-      // Fallback to keyboard scancodes for non-serial actions (e.g. Ctrl+Alt+Del).
-      const sequence = specialKeyKeyboardScancodes[name];
-      if (sequence) {
-        await emulator.keyboard_send_scancodes(sequence, 0);
-        if (emulator?.serial_adapter?.term?.focus) {
-          emulator.serial_adapter.term.focus();
-        }
-        return;
-      }
-
-      setStatus(`unsupported key action: ${name}`);
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      setStatus(`error (${msg})`);
-      console.error(err);
-    }
-  }
-
   function ensureEmulator() {
     if (emulator) {
       return emulator;
@@ -1119,6 +1083,15 @@
           } catch (err) {
             serialFitAddon = null;
             console.warn("failed to load xterm fit addon", err);
+          }
+        }
+        if (!serialKeypadAddon && xtermKeypadAddonCtor && term && typeof term.loadAddon === "function") {
+          try {
+            serialKeypadAddon = new xtermKeypadAddonCtor();
+            term.loadAddon(serialKeypadAddon);
+          } catch (err) {
+            serialKeypadAddon = null;
+            console.warn("failed to load xterm keypad addon", err);
           }
         }
         scheduleSerialFit();
@@ -1292,23 +1265,17 @@
     });
   }
 
-  specialKeyButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const action = btn.getAttribute("data-special-key");
-      if (!action) {
-        return;
-      }
-      void sendSpecialKeys(action);
-    });
-  });
-
   if (!serialEnabled && serialPanelEl) {
     serialPanelEl.style.display = "none";
   } else if (serialEnabled) {
     if (serialHintEl) {
-      serialHintEl.textContent = serialUseXterm
-        ? "Serial backend: xterm.js (interactive)."
-        : "xterm.js missing; run make fetch-v86.";
+      if (!serialUseXterm) {
+        serialHintEl.textContent = "xterm.js missing; run make fetch-v86.";
+      } else if (xtermKeypadAddonCtor) {
+        serialHintEl.textContent = "Serial backend: xterm.js with keypad addon.";
+      } else {
+        serialHintEl.textContent = "Serial backend: xterm.js (keypad addon unavailable).";
+      }
     }
   }
   if (vgaPanelEl && !vgaEnabled) {

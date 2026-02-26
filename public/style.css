@@ -186,11 +186,6 @@ button:hover {
   height: 0.8rem;
 }
 
-#special-keys button {
-  min-width: 88px;
-  font-size: 0.84rem;
-}
-
 #serial-xterm-wrap {
   width: 100%;
   min-width: 320px;
