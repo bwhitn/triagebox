@@ -126,8 +126,10 @@ make build-kernel-fast
 - `vim` and `nano` are always included in minimal form; Vim runtime files are disabled and Nano is forced to its tiny profile
 - `yara-x` is always included as both `yr` (upstream name) and `yara-x` (compat symlink)
 - `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)
-  `optimized`: userspace/toolchain `-O3` + LTO for best runtime speed
-  `fast`: userspace/toolchain `-O0`, LTO off for shorter build times
+  `optimized`: userspace/toolchain `-O3`
+  `fast`: userspace/toolchain `-O0` for shorter build times
+- `BUILDROOT_LTO` (default `1`; options: `1`, `0`)
+  controls Buildroot toolchain/userspace LTO independently of `BUILD_PROFILE`
 - `KERNEL_CFLAGS` (default `-O3`; passed as `LINUX_CFLAGS` so kernel builds stay high optimization by default)
 - `PYTHON_MODULE_FORMAT` (default `pyc`; options: `pyc`, `py`, `both`)
   `pyc`: precompiled `.pyc` only (no `.py` sources in target)

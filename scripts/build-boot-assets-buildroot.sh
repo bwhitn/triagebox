@@ -31,6 +31,7 @@ KERNEL_CFLAGS="${KERNEL_CFLAGS:--O3}"
 BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION:-0.9.26}"
 PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION:-0.17.3}"
 BUILD_PROFILE="${BUILD_PROFILE:-optimized}"
+BUILDROOT_LTO="${BUILDROOT_LTO:-1}" # 0|1, toolchain/userspace LTO toggle
 PYTHON_MODULE_FORMAT="${PYTHON_MODULE_FORMAT:-pyc}" # pyc|py|both
 PREFETCH_DOWNLOADS="${PREFETCH_DOWNLOADS:-1}"
 PREFETCH_REFINERY_WHEELS="${PREFETCH_REFINERY_WHEELS:-1}"
@@ -160,6 +161,10 @@ if [[ "${FORCE_REFINERY_REINSTALL}" != "0" ]] && [[ "${FORCE_REFINERY_REINSTALL}
 fi
 if [[ "${PYTHON_SCRIPT_OPTIMIZE_ALL}" != "0" ]] && [[ "${PYTHON_SCRIPT_OPTIMIZE_ALL}" != "1" ]]; then
     echo "PYTHON_SCRIPT_OPTIMIZE_ALL must be 0 or 1 (got: ${PYTHON_SCRIPT_OPTIMIZE_ALL})" >&2
+    exit 1
+fi
+if [[ "${BUILDROOT_LTO}" != "0" ]] && [[ "${BUILDROOT_LTO}" != "1" ]]; then
+    echo "BUILDROOT_LTO must be 0 or 1 (got: ${BUILDROOT_LTO})" >&2
     exit 1
 fi
 if ! [[ "${REFINERY_SDIST_BUILD_JOBS}" =~ ^[0-9]+$ ]] || (( REFINERY_SDIST_BUILD_JOBS < 1 )); then
@@ -550,16 +555,21 @@ primary_site="${BUILDROOT_PRIMARY_SITE:-}"
 primary_site_only="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
 case "${BUILD_PROFILE}" in
     optimized)
-        optimization_config=$'BR2_OPTIMIZE_3=y\nBR2_ENABLE_LTO=y'
+        optimization_config_base='BR2_OPTIMIZE_3=y'
         ;;
     fast)
-        optimization_config=$'BR2_OPTIMIZE_0=y\n# BR2_ENABLE_LTO is not set'
+        optimization_config_base='BR2_OPTIMIZE_0=y'
         ;;
     *)
         echo "BUILD_PROFILE must be 'optimized' or 'fast' (got: ${BUILD_PROFILE})" >&2
         exit 1
         ;;
 esac
+if [[ "${BUILDROOT_LTO}" == "1" ]]; then
+    optimization_config="${optimization_config_base}"$'\n''BR2_ENABLE_LTO=y'
+else
+    optimization_config="${optimization_config_base}"$'\n''# BR2_ENABLE_LTO is not set'
+fi
 case "${PYTHON_MODULE_FORMAT}" in
     pyc)
         python_module_format_config=$'# BR2_PACKAGE_PYTHON3_PY_ONLY is not set\nBR2_PACKAGE_PYTHON3_PYC_ONLY=y\n# BR2_PACKAGE_PYTHON3_PY_PYC is not set'
