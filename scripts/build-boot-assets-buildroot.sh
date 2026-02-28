@@ -104,7 +104,7 @@ clean_stale_host_toolchain_state() {
         rm -rf "${OUT_DIR}/host"
         if [[ -d "${OUT_DIR}/build" ]]; then
             find "${OUT_DIR}/build" -maxdepth 1 -type d \
-                \( -name 'host-binutils-*' -o -name 'host-gcc-initial-*' -o -name 'host-gcc-final-*' \) \
+                -name 'host-*' \
                 -exec rm -rf {} +
         fi
     fi
@@ -339,6 +339,30 @@ if [[ -f "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk" ]] && \
     ' "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk" > "${pybind_mk_tmp}"
     cp "${pybind_mk_tmp}" "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk"
     rm -f "${pybind_mk_tmp}"
+fi
+
+# Buildroot 2026.02-rc1 host-binutils enables LTO in this project profile, and
+# binutils 2.44 then requires ISL during host configure. Ensure host-isl is
+# pulled in before host-binutils configures.
+if [[ -f "${BUILDROOT_SRC}/package/binutils/binutils.mk" ]] && \
+    ! grep -q '^# NIXBROWSER_LTO_HOST_ISL_FIX$' "${BUILDROOT_SRC}/package/binutils/binutils.mk"; then
+    echo "Applying local Buildroot fix: host-binutils LTO depends on host-isl"
+    binutils_mk_tmp="$(mktemp "${WORK_DIR}/binutils.mk.XXXXXX")"
+    awk '
+        {
+            print
+            if ($0 == "HOST_BINUTILS_CONF_OPTS += --disable-gprofng") {
+                print ""
+                print "# NIXBROWSER_LTO_HOST_ISL_FIX"
+                print "ifeq ($(BR2_ENABLE_LTO),y)"
+                print "HOST_BINUTILS_DEPENDENCIES += host-isl"
+                print "HOST_BINUTILS_CONF_OPTS += --with-isl=$(HOST_DIR)"
+                print "endif"
+            }
+        }
+    ' "${BUILDROOT_SRC}/package/binutils/binutils.mk" > "${binutils_mk_tmp}"
+    cp "${binutils_mk_tmp}" "${BUILDROOT_SRC}/package/binutils/binutils.mk"
+    rm -f "${binutils_mk_tmp}"
 fi
 
 refinery_requirements_source="${BR2_EXTERNAL_DIR}/package/python-binary-refinery/requirements-all.txt"
