@@ -1,0 +1,11 @@
+" Minimal system vimrc for runtime-less Buildroot images.
+" Prevent startup from trying to source defaults.vim from the missing runtime tree.
+let skip_defaults_vim = 1
+
+" Keep core Vim behavior without pulling in runtime bundles.
+set nocompatible
+set backspace=indent,eol,start
+set history=50
+set ruler
+syntax off
+filetype off
