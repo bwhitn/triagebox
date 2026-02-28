@@ -675,6 +675,22 @@ make -C "${BUILDROOT_SRC}" \
 
 printf '%s\n' "${BUILDROOT_VERSION}" > "${HOST_TOOLCHAIN_VERSION_MARKER}"
 
+if grep -q '^BR2_ENABLE_LTO=y$' "${OUT_DIR}/.config"; then
+    echo "[2.5/8] Bootstrapping host-isl for LTO-enabled host toolchain"
+    make -C "${BUILDROOT_SRC}" \
+        O="${OUT_DIR}" \
+        BR2_DL_DIR="${DL_DIR}" \
+        BR2_EXTERNAL="${BR2_EXTERNAL_DIR}" \
+        LINUX_CFLAGS="${KERNEL_CFLAGS}" \
+        PYTHON_BINARY_REFINERY_VERSION="${BINARY_REFINERY_VERSION}" \
+        PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR="${REFINERY_WHEELHOUSE_DIR}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_PRIMARY="${REFINERY_WHEEL_PLATFORM_PRIMARY}" \
+        PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK}" \
+        PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH=0 \
+        PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
+        host-isl
+fi
+
 refinery_buildroot_requirements_active="${WORK_DIR}/refinery-buildroot-provided-active.txt"
 : > "${refinery_buildroot_requirements_active}"
 if [[ -s "${refinery_buildroot_map}" ]]; then
