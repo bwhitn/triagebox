@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${V86_PORT:-8080}:8080"
+      - "${V86_PORT:-8000}:8000"
     volumes:
       - ./public:/srv/public:ro
       - ./public/uploads:/srv/public/uploads:rw

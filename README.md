@@ -123,6 +123,7 @@ make build-kernel-fast
 - If `BR2_DOWNLOAD_FORCE_CHECK_HASHES=y` from the base defconfig and the pinned kernel patchlevel is no longer present in Buildroot's `linux.hash`, the build script auto-adjusts to the newest hashed patchlevel in the same major/minor series.
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
+- `vim` and `nano` are always included in minimal form; Vim runtime files are disabled and Nano is forced to its tiny profile
 - `yara-x` is always included as both `yr` (upstream name) and `yara-x` (compat symlink)
 - `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)
   `optimized`: userspace/toolchain `-O3` + LTO for best runtime speed
@@ -234,12 +235,12 @@ ENABLE_SERIAL=0 make write-build-config
 make serve
 ```
 
-Open `http://localhost:8080`.
+Open `http://localhost:8000`.
 (`make server` is an alias for `make serve`.)
-If enabled at build time, download legal info archive at `http://localhost:8080/assets/buildroot-legal-info.tar.gz`.
-If present, missing optional binary-refinery wheel report is at `http://localhost:8080/assets/binary-refinery-missing-wheels.txt`.
-Buildroot-provided optional dependency report is at `http://localhost:8080/assets/binary-refinery-buildroot-provided.txt`.
-Missing Buildroot target coverage report is at `http://localhost:8080/assets/binary-refinery-missing-buildroot-packages.txt`.
+If enabled at build time, download legal info archive at `http://localhost:8000/assets/buildroot-legal-info.tar.gz`.
+If present, missing optional binary-refinery wheel report is at `http://localhost:8000/assets/binary-refinery-missing-wheels.txt`.
+Buildroot-provided optional dependency report is at `http://localhost:8000/assets/binary-refinery-buildroot-provided.txt`.
+Missing Buildroot target coverage report is at `http://localhost:8000/assets/binary-refinery-missing-buildroot-packages.txt`.
 Buildroot root disk is the only attached disk (`hda`/`/dev/sda`).
 Runtime filesystem mode defaults:
 - `/tmp` is mounted as `tmpfs` (RAM-backed).

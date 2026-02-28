@@ -1157,7 +1157,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Serve static files with optional gzip content-encoding."
     )
-    parser.add_argument("port", nargs="?", type=int, default=8080)
+    parser.add_argument("port", nargs="?", type=int, default=8000)
     parser.add_argument("directory", nargs="?", default="public")
     args = parser.parse_args()
 
