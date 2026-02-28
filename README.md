@@ -123,6 +123,7 @@ make build-kernel-fast
 - If `BR2_DOWNLOAD_FORCE_CHECK_HASHES=y` from the base defconfig and the pinned kernel patchlevel is no longer present in Buildroot's `linux.hash`, the build script auto-adjusts to the newest hashed patchlevel in the same major/minor series.
 - x86 target CPU is forced to `pentium-m` (SSE2-capable, avoids pentium4-specific behavior)
 - Buildroot toolchain C++ support is forced on so `python-pymupdf` can be built from source on target arch
+- `yara-x` is always included as both `yr` (upstream name) and `yara-x` (compat symlink)
 - `BUILD_PROFILE` (default `optimized`; options: `optimized`, `fast`)
   `optimized`: userspace/toolchain `-O3` + LTO for best runtime speed
   `fast`: userspace/toolchain `-O0`, LTO off for shorter build times

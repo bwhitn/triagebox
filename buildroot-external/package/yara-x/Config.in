@@ -1,0 +1,13 @@
+config BR2_PACKAGE_YARA_X
+	bool "yara-x"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	help
+	  YARA-X is the Rust implementation of YARA from VirusTotal.
+	  This package installs the upstream CLI (`yr`) and also provides
+	  a `yara-x` symlink for convenience.
+
+	  https://github.com/VirusTotal/yara-x
+
+comment "yara-x needs a toolchain w/ Rust target support"
+	depends on !BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
