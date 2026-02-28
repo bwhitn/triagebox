@@ -12,6 +12,7 @@ OVERLAY_DIR="${ROOT_DIR}/buildroot/overlay"
 BR2_EXTERNAL_DIR="${ROOT_DIR}/buildroot-external"
 BUSYBOX_NO_DHCP_FRAGMENT="${ROOT_DIR}/buildroot/busybox-no-dhcp.fragment"
 KERNEL_DRIVER_TRIM_FRAGMENT="${ROOT_DIR}/buildroot/linux-v86-trim.fragment"
+HOST_TOOLCHAIN_VERSION_MARKER="${OUT_DIR}/.nixbrowser-host-toolchain-buildroot-version"
 
 BUILDROOT_VERSION="${BUILDROOT_VERSION:-2026.02-rc1}"
 BUILDROOT_ARCHIVE_URL="${BUILDROOT_ARCHIVE_URL:-https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.xz}"
@@ -70,6 +71,43 @@ need_cmd() {
         echo "Missing required command: $1" >&2
         exit 1
     }
+}
+
+clean_stale_host_toolchain_state() {
+    local previous_version=""
+    local reason=""
+    local duplicate_binutils_count=0
+    local corrupted_objects=""
+
+    if [[ -f "${HOST_TOOLCHAIN_VERSION_MARKER}" ]]; then
+        previous_version="$(cat "${HOST_TOOLCHAIN_VERSION_MARKER}" 2>/dev/null || true)"
+    fi
+
+    if [[ -d "${OUT_DIR}/build" ]]; then
+        duplicate_binutils_count="$(find "${OUT_DIR}/build" -maxdepth 1 -type d -name 'host-binutils-*' | wc -l | tr -d '[:space:]')"
+        corrupted_objects="$(find "${OUT_DIR}/build" \
+            -path '*/host-gcc-initial-*/build/gcc/dce.o' \
+            -size 0c \
+            -print 2>/dev/null || true)"
+    fi
+
+    if [[ -n "${previous_version}" ]] && [[ "${previous_version}" != "${BUILDROOT_VERSION}" ]]; then
+        reason="Buildroot version changed (${previous_version} -> ${BUILDROOT_VERSION})"
+    elif [[ "${duplicate_binutils_count}" =~ ^[0-9]+$ ]] && (( duplicate_binutils_count > 1 )); then
+        reason="multiple host-binutils build directories detected"
+    elif [[ -n "${corrupted_objects}" ]]; then
+        reason="corrupted host-gcc-initial objects detected"
+    fi
+
+    if [[ -n "${reason}" ]]; then
+        echo "Cleaning stale host toolchain state: ${reason}"
+        rm -rf "${OUT_DIR}/host"
+        if [[ -d "${OUT_DIR}/build" ]]; then
+            find "${OUT_DIR}/build" -maxdepth 1 -type d \
+                \( -name 'host-binutils-*' -o -name 'host-gcc-initial-*' -o -name 'host-gcc-final-*' \) \
+                -exec rm -rf {} +
+        fi
+    fi
 }
 
 for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf python3; do
@@ -441,6 +479,7 @@ echo "[2/8] Configuring Buildroot (${BUILDROOT_DEFCONFIG})"
 if [[ "${BUILDROOT_RESUME}" == "1" ]]; then
     if [[ -d "${OUT_DIR}" ]]; then
         echo "Resume mode enabled; reusing Buildroot output directory: ${OUT_DIR}"
+        clean_stale_host_toolchain_state
     fi
 else
     rm -rf "${OUT_DIR}"
@@ -609,6 +648,8 @@ make -C "${BUILDROOT_SRC}" \
     PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH=0 \
     PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
     olddefconfig
+
+printf '%s\n' "${BUILDROOT_VERSION}" > "${HOST_TOOLCHAIN_VERSION_MARKER}"
 
 refinery_buildroot_requirements_active="${WORK_DIR}/refinery-buildroot-provided-active.txt"
 : > "${refinery_buildroot_requirements_active}"
