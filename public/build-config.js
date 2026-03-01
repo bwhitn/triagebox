@@ -1,4 +1,5 @@
 window.V86_BUILD_CONFIG = {
+  projectVersion: "0.0.0",
   enableSerial: true,
   bios: "assets/v86/seabios.bin",
   libv86Path: "assets/v86/libv86.js",

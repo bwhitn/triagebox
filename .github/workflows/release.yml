@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            binaryen \
+            bison \
+            build-essential \
+            ccache \
+            clang \
+            cpio \
+            curl \
+            e2fsprogs \
+            flex \
+            gawk \
+            git \
+            lld \
+            openjdk-17-jre-headless \
+            patch \
+            perl \
+            pkg-config \
+            python3 \
+            python3-pip \
+            rsync \
+            unzip \
+            xz-utils
+
+      - name: Verify tag matches VERSION
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          TAG="v${VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${TAG}" ]]; then
+            echo "Tag/version mismatch: VERSION=${VERSION}, tag=${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Build release bundle
+        env:
+          EXPECTED_TAG: ${{ github.ref_name }}
+          BUILDROOT_CCACHE: "0"
+        run: ./scripts/package-release.sh
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          generate_release_notes: true
