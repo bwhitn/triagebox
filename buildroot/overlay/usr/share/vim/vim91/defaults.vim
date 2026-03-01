@@ -5,5 +5,3 @@ set nocompatible
 set backspace=indent,eol,start
 set history=50
 set ruler
-syntax off
-filetype off
