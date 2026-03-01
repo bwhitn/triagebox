@@ -371,11 +371,12 @@ if [[ -f "${BUILDROOT_SRC}/package/python-pybind/python-pybind.mk" ]] && \
 fi
 
 # Buildroot 2026.02-rc1 host-binutils enables LTO in this project profile, and
-# binutils 2.44 then requires ISL during host configure. Ensure host-isl is
-# pulled in before host-binutils configures.
+# binutils 2.44 then requires ISL plus its MPFR/GMP link dependencies during
+# host configure. Ensure the required host math libs are pulled in before
+# host-binutils configures.
 if [[ -f "${BUILDROOT_SRC}/package/binutils/binutils.mk" ]] && \
     ! grep -q '^# NIXBROWSER_LTO_HOST_ISL_FIX$' "${BUILDROOT_SRC}/package/binutils/binutils.mk"; then
-    echo "Applying local Buildroot fix: host-binutils LTO depends on host-isl"
+    echo "Applying local Buildroot fix: host-binutils LTO depends on host-isl and host-mpfr"
     binutils_mk_tmp="$(mktemp "${WORK_DIR}/binutils.mk.XXXXXX")"
     awk '
         {
@@ -384,6 +385,7 @@ if [[ -f "${BUILDROOT_SRC}/package/binutils/binutils.mk" ]] && \
                 print ""
                 print "# NIXBROWSER_LTO_HOST_ISL_FIX"
                 print "ifeq ($(BR2_ENABLE_LTO),y)"
+                print "HOST_BINUTILS_DEPENDENCIES += host-mpfr"
                 print "HOST_BINUTILS_DEPENDENCIES += host-isl"
                 print "HOST_BINUTILS_CONF_OPTS += --with-isl=$(HOST_DIR)"
                 print "endif"
@@ -710,7 +712,7 @@ make -C "${BUILDROOT_SRC}" \
 printf '%s\n' "${BUILDROOT_VERSION}" > "${HOST_TOOLCHAIN_VERSION_MARKER}"
 
 if grep -q '^BR2_ENABLE_LTO=y$' "${OUT_DIR}/.config"; then
-    echo "[2.5/8] Bootstrapping host-isl for LTO-enabled host toolchain"
+    echo "[2.5/8] Bootstrapping host-mpfr and host-isl for LTO-enabled host toolchain"
     make -C "${BUILDROOT_SRC}" \
         O="${OUT_DIR}" \
         BR2_DL_DIR="${DL_DIR}" \
@@ -722,7 +724,7 @@ if grep -q '^BR2_ENABLE_LTO=y$' "${OUT_DIR}/.config"; then
         PYTHON_BINARY_REFINERY_WHEEL_PLATFORM_FALLBACK="${REFINERY_WHEEL_PLATFORM_FALLBACK}" \
         PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH=0 \
         PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
-        host-isl
+        host-mpfr host-isl
     if [[ ! -f "${OUT_DIR}/host/include/isl/schedule.h" ]]; then
         stage_host_isl_if_needed || {
             echo "host-isl completed but isl headers are still missing from ${OUT_DIR}/host" >&2
