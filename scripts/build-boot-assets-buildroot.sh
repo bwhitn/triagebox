@@ -111,6 +111,30 @@ clean_stale_host_toolchain_state() {
     fi
 }
 
+stage_host_isl_if_needed() {
+    local host_isl_dir=""
+
+    [[ -f "${OUT_DIR}/host/include/isl/schedule.h" ]] && return 0
+
+    host_isl_dir="$(find "${OUT_DIR}/build" -maxdepth 1 -type d -name 'host-isl-*' | sort | tail -n1)"
+    [[ -n "${host_isl_dir}" ]] || return 1
+
+    echo "Staging host-isl artifacts into ${OUT_DIR}/host"
+    mkdir -p "${OUT_DIR}/host/include/isl" "${OUT_DIR}/host/lib" "${OUT_DIR}/host/lib/pkgconfig"
+
+    if [[ -d "${host_isl_dir}/include/isl" ]]; then
+        cp -a "${host_isl_dir}/include/isl/." "${OUT_DIR}/host/include/isl/"
+    fi
+    if compgen -G "${host_isl_dir}/.libs/libisl*" >/dev/null; then
+        cp -a "${host_isl_dir}/.libs/libisl"* "${OUT_DIR}/host/lib/"
+    fi
+    if [[ -f "${host_isl_dir}/isl.pc" ]]; then
+        cp -a "${host_isl_dir}/isl.pc" "${OUT_DIR}/host/lib/pkgconfig/"
+    fi
+
+    [[ -f "${OUT_DIR}/host/include/isl/schedule.h" ]]
+}
+
 for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf python3; do
     need_cmd "$cmd"
 done
@@ -699,6 +723,12 @@ if grep -q '^BR2_ENABLE_LTO=y$' "${OUT_DIR}/.config"; then
         PYTHON_BINARY_REFINERY_REQUIRE_PREFETCH=0 \
         PYTHON_LIEF_VERSION="${PYTHON_LIEF_VERSION}" \
         host-isl
+    if [[ ! -f "${OUT_DIR}/host/include/isl/schedule.h" ]]; then
+        stage_host_isl_if_needed || {
+            echo "host-isl completed but isl headers are still missing from ${OUT_DIR}/host" >&2
+            exit 1
+        }
+    fi
 fi
 
 refinery_buildroot_requirements_active="${WORK_DIR}/refinery-buildroot-provided-active.txt"
