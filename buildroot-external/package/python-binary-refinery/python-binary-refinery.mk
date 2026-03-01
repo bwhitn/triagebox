@@ -85,7 +85,7 @@ define PYTHON_BINARY_REFINERY_PATCH_RESOURCES_FASTPATH
 			'' \
 			'from pathlib import Path' \
 			'' \
-			"_DATA_DIR = Path(__file__).resolve().parent.parent / '\''data'\''" \
+			'_DATA_DIR = Path(__file__).resolve().parent.parent / "data"' \
 			'' \
 			'' \
 			'def datapath(name: str):' \
