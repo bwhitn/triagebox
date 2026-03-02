@@ -24,6 +24,7 @@ jobs:
       - name: Ensure Rust wasm target
         run: |
           if command -v rustup >/dev/null 2>&1; then
+            rustup default stable
             rustup target add wasm32-unknown-unknown
           else
             echo "rustup not found; install the wasm32-unknown-unknown target manually on the runner" >&2
