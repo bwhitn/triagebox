@@ -31,6 +31,29 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure ext2 filesystem tools
+        run: |
+          missing=0
+          for cmd in e2fsck mke2fs resize2fs; do
+            if ! command -v "${cmd}" >/dev/null 2>&1; then
+              missing=1
+              break
+            fi
+          done
+          if [ "${missing}" -eq 0 ]; then
+            exit 0
+          fi
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "Missing ext2 tools and apt-get is unavailable; install e2fsprogs manually on the runner" >&2
+            exit 1
+          fi
+          if ! command -v sudo >/dev/null 2>&1; then
+            echo "Missing ext2 tools and sudo is unavailable; install e2fsprogs manually on the runner" >&2
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs
+
       - name: Verify tag matches VERSION
         if: github.event_name == 'push'
         run: |
