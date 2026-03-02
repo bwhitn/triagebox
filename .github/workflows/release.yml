@@ -21,6 +21,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Ensure sbin directories are on PATH
+        run: |
+          echo /usr/local/sbin >> "${GITHUB_PATH}"
+          echo /usr/sbin >> "${GITHUB_PATH}"
+          echo /sbin >> "${GITHUB_PATH}"
+
       - name: Ensure Rust wasm target
         run: |
           if command -v rustup >/dev/null 2>&1; then

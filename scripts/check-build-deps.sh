@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# GitHub Actions self-hosted runners often start with PATH entries that omit
+# sbin directories, but this project needs tools like e2fsck/mke2fs/resize2fs.
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
+
 missing=()
 
 need_cmd() {
