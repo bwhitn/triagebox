@@ -39,9 +39,27 @@ jobs:
 
       - name: Ensure ext2 filesystem tools
         run: |
+          export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
+          find_tool() {
+            local cmd="$1"
+            local candidate
+            for candidate in \
+              "/usr/local/sbin/${cmd}" \
+              "/usr/sbin/${cmd}" \
+              "/sbin/${cmd}" \
+              "/usr/bin/${cmd}" \
+              "/bin/${cmd}"
+            do
+              if [ -x "${candidate}" ]; then
+                printf '%s\n' "${candidate}"
+                return 0
+              fi
+            done
+            return 1
+          }
           missing=0
           for cmd in e2fsck mke2fs resize2fs; do
-            if ! command -v "${cmd}" >/dev/null 2>&1; then
+            if ! find_tool "${cmd}" >/dev/null 2>&1; then
               missing=1
               break
             fi
@@ -51,14 +69,26 @@ jobs:
           fi
           if ! command -v apt-get >/dev/null 2>&1; then
             echo "Missing ext2 tools and apt-get is unavailable; install e2fsprogs manually on the runner" >&2
+            echo "PATH=${PATH}" >&2
+            ls -l /usr/local/sbin/e2fsck /usr/sbin/e2fsck /sbin/e2fsck 2>/dev/null || true
+            ls -l /usr/local/sbin/mke2fs /usr/sbin/mke2fs /sbin/mke2fs 2>/dev/null || true
+            ls -l /usr/local/sbin/resize2fs /usr/sbin/resize2fs /sbin/resize2fs 2>/dev/null || true
             exit 1
           fi
-          if ! command -v sudo >/dev/null 2>&1; then
-            echo "Missing ext2 tools and sudo is unavailable; install e2fsprogs manually on the runner" >&2
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y e2fsprogs
+          elif [ "$(id -u)" = "0" ]; then
+            apt-get update
+            apt-get install -y e2fsprogs
+          else
+            echo "Missing ext2 tools and neither sudo nor root privileges are available; install e2fsprogs manually on the runner" >&2
+            echo "PATH=${PATH}" >&2
+            ls -l /usr/local/sbin/e2fsck /usr/sbin/e2fsck /sbin/e2fsck 2>/dev/null || true
+            ls -l /usr/local/sbin/mke2fs /usr/sbin/mke2fs /sbin/mke2fs 2>/dev/null || true
+            ls -l /usr/local/sbin/resize2fs /usr/sbin/resize2fs /sbin/resize2fs 2>/dev/null || true
             exit 1
           fi
-          sudo apt-get update
-          sudo apt-get install -y e2fsprogs
 
       - name: Verify tag matches VERSION
         if: github.event_name == 'push'
