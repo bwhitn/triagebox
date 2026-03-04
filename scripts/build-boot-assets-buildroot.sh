@@ -9,10 +9,17 @@ OUT_DIR="${WORK_DIR}/output"
 DL_DIR="${WORK_DIR}/dl"
 EXPORT_DIR="${WORK_DIR}/export"
 OVERLAY_DIR="${ROOT_DIR}/buildroot/overlay"
+GENERATED_OVERLAY_DIR="${WORK_DIR}/overlay-generated"
 BR2_EXTERNAL_DIR="${ROOT_DIR}/buildroot-external"
 BUSYBOX_NO_DHCP_FRAGMENT="${ROOT_DIR}/buildroot/busybox-no-dhcp.fragment"
 KERNEL_DRIVER_TRIM_FRAGMENT="${ROOT_DIR}/buildroot/linux-v86-trim.fragment"
 HOST_TOOLCHAIN_VERSION_MARKER="${OUT_DIR}/.nixbrowser-host-toolchain-buildroot-version"
+VERSION_FILE="${ROOT_DIR}/VERSION"
+
+PROJECT_VERSION="0.0.0"
+if [[ -f "${VERSION_FILE}" ]]; then
+    PROJECT_VERSION="$(tr -d '[:space:]' < "${VERSION_FILE}")"
+fi
 
 BUILDROOT_VERSION="${BUILDROOT_VERSION:-2026.02-rc1}"
 BUILDROOT_ARCHIVE_URL="${BUILDROOT_ARCHIVE_URL:-https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.xz}"
@@ -72,6 +79,51 @@ need_cmd() {
         echo "Missing required command: $1" >&2
         exit 1
     }
+}
+
+render_build_overlay() {
+    local linux_version="$1"
+    local motd_path=""
+
+    rm -rf "${GENERATED_OVERLAY_DIR}"
+    mkdir -p "${GENERATED_OVERLAY_DIR}"
+    rsync -a "${OVERLAY_DIR}/" "${GENERATED_OVERLAY_DIR}/"
+
+    motd_path="${GENERATED_OVERLAY_DIR}/etc/motd"
+    [[ -f "${motd_path}" ]] || return 0
+
+    PROJECT_VERSION_RENDER="${PROJECT_VERSION}" \
+    LINUX_VERSION_RENDER="${linux_version}" \
+    BUILDROOT_VERSION_RENDER="${BUILDROOT_VERSION}" \
+    python3 - "${motd_path}" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+motd_path = Path(sys.argv[1])
+text = motd_path.read_text(encoding="utf-8")
+replacements = {
+    "{PROJECT_VERSION}": os.environ["PROJECT_VERSION_RENDER"],
+    "{NIXBROWSER_VERSION}": os.environ["PROJECT_VERSION_RENDER"],
+    "@PROJECT_VERSION@": os.environ["PROJECT_VERSION_RENDER"],
+    "@NIXBROWSER_VERSION@": os.environ["PROJECT_VERSION_RENDER"],
+    "{{PROJECT_VERSION}}": os.environ["PROJECT_VERSION_RENDER"],
+    "{{NIXBROWSER_VERSION}}": os.environ["PROJECT_VERSION_RENDER"],
+    "__PROJECT_VERSION__": os.environ["PROJECT_VERSION_RENDER"],
+    "__NIXBROWSER_VERSION__": os.environ["PROJECT_VERSION_RENDER"],
+    "{LINUX_VERSION}": os.environ["LINUX_VERSION_RENDER"],
+    "@LINUX_VERSION@": os.environ["LINUX_VERSION_RENDER"],
+    "{{LINUX_VERSION}}": os.environ["LINUX_VERSION_RENDER"],
+    "__LINUX_VERSION__": os.environ["LINUX_VERSION_RENDER"],
+    "{BUILDROOT_VERSION}": os.environ["BUILDROOT_VERSION_RENDER"],
+    "@BUILDROOT_VERSION@": os.environ["BUILDROOT_VERSION_RENDER"],
+    "{{BUILDROOT_VERSION}}": os.environ["BUILDROOT_VERSION_RENDER"],
+    "__BUILDROOT_VERSION__": os.environ["BUILDROOT_VERSION_RENDER"],
+}
+for needle, value in replacements.items():
+    text = text.replace(needle, value)
+motd_path.write_text(text, encoding="utf-8")
+PY
 }
 
 clean_stale_host_toolchain_state() {
@@ -554,9 +606,9 @@ make -C "${BUILDROOT_SRC}" \
 
 linux_hash_file="${BUILDROOT_SRC}/linux/linux.hash"
 adjusted_linux_kernel_version=""
+configured_linux_kernel_version="$(sed -n 's/^BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="\(.*\)"$/\1/p' "${OUT_DIR}/.config" | head -n1)"
 disable_force_hashes="0"
 if [[ -f "${linux_hash_file}" ]] && grep -q '^BR2_DOWNLOAD_FORCE_CHECK_HASHES=y$' "${OUT_DIR}/.config"; then
-    configured_linux_kernel_version="$(sed -n 's/^BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="\(.*\)"$/\1/p' "${OUT_DIR}/.config" | head -n1)"
     if [[ "${configured_linux_kernel_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         if ! grep -Eq "[[:space:]]linux-${configured_linux_kernel_version}\\.tar\\.xz$" "${linux_hash_file}"; then
             configured_linux_kernel_series="${configured_linux_kernel_version%.*}"
@@ -576,6 +628,12 @@ if [[ -f "${linux_hash_file}" ]] && grep -q '^BR2_DOWNLOAD_FORCE_CHECK_HASHES=y$
         fi
     fi
 fi
+
+effective_linux_kernel_version="${adjusted_linux_kernel_version:-${configured_linux_kernel_version}}"
+if [[ -z "${effective_linux_kernel_version}" ]]; then
+    effective_linux_kernel_version="unknown"
+fi
+render_build_overlay "${effective_linux_kernel_version}"
 
 primary_site="${BUILDROOT_PRIMARY_SITE:-}"
 primary_site_only="${BUILDROOT_PRIMARY_SITE_ONLY:-0}"
@@ -621,7 +679,7 @@ else
 fi
 
 cat >> "${OUT_DIR}/.config" <<EOF
-BR2_ROOTFS_OVERLAY="${OVERLAY_DIR}"
+BR2_ROOTFS_OVERLAY="${GENERATED_OVERLAY_DIR}"
 # qemu_x86_defconfig adds board/qemu/x86/post-build.sh, which injects tty1 getty.
 # Keep serial-only console by clearing defconfig post-build script.
 BR2_ROOTFS_POST_BUILD_SCRIPT=""
@@ -652,6 +710,7 @@ BR2_PACKAGE_VIM=y
 # BR2_PACKAGE_VIM_RUNTIME is not set
 BR2_PACKAGE_NANO=y
 BR2_PACKAGE_NANO_TINY=y
+BR2_PACKAGE_PERL=y
 BR2_PACKAGE_YARA_X=y
 BR2_PACKAGE_PYTHON_PYBIND=y
 BR2_PACKAGE_ZBAR=y

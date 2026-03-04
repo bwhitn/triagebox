@@ -30,6 +30,8 @@ RELEASE_BASENAME="nixbrowser-${TAG_VERSION}"
 STAGE_DIR="${DIST_DIR}/${RELEASE_BASENAME}"
 ARCHIVE_PATH="${DIST_DIR}/${RELEASE_BASENAME}.tar.gz"
 SHA256_PATH="${ARCHIVE_PATH}.sha256"
+RUNTIME_PUBLIC_DIR="${STAGE_DIR}/public"
+RUNTIME_SCRIPTS_DIR="${STAGE_DIR}/scripts"
 
 rm -rf "${STAGE_DIR}" "${ARCHIVE_PATH}" "${SHA256_PATH}"
 mkdir -p "${DIST_DIR}"
@@ -41,16 +43,19 @@ if [[ "${INCLUDE_V86_MIN}" == "1" ]]; then
     make -C "${ROOT_DIR}" use-v86-stock
 fi
 
-mkdir -p "${STAGE_DIR}"
+mkdir -p "${RUNTIME_PUBLIC_DIR}" "${RUNTIME_SCRIPTS_DIR}"
 rsync -a \
-    --exclude '.git/' \
-    --exclude '.github/' \
-    --exclude '.work/' \
-    --exclude 'dist/' \
-    --exclude '.venv/' \
-    --exclude '__pycache__/' \
-    --exclude '*.pyc' \
-    "${ROOT_DIR}/" "${STAGE_DIR}/"
+    --exclude 'uploads/*.img' \
+    --exclude 'uploads/*.qcow2' \
+    --exclude 'uploads/*.iso' \
+    "${ROOT_DIR}/public/" "${RUNTIME_PUBLIC_DIR}/"
+mkdir -p "${RUNTIME_PUBLIC_DIR}/uploads"
+touch "${RUNTIME_PUBLIC_DIR}/uploads/.gitkeep"
+install -m 0755 \
+    "${ROOT_DIR}/scripts/serve-local.sh" \
+    "${ROOT_DIR}/scripts/serve-compressed.py" \
+    "${RUNTIME_SCRIPTS_DIR}/"
+install -m 0644 "${ROOT_DIR}/VERSION" "${STAGE_DIR}/VERSION"
 
 cat > "${STAGE_DIR}/release-manifest.txt" <<EOF
 project=${RELEASE_BASENAME}
@@ -71,4 +76,3 @@ sha256sum "${ARCHIVE_PATH}" > "${SHA256_PATH}"
 echo "Created:"
 echo "  ${ARCHIVE_PATH}"
 echo "  ${SHA256_PATH}"
-
