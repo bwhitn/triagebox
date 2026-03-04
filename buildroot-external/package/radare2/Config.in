@@ -1,0 +1,4 @@
+config BR2_PACKAGE_RADARE2
+	bool "radare2"
+	help
+	  The UNIX-like reverse engineering framework and command-line toolkit.
