@@ -1319,6 +1319,7 @@ cat > "${ASSETS_DIR}/boot-image-info.txt" <<META
 built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 flavor=buildroot
 buildroot_version=${BUILDROOT_VERSION}
+linux_version=${effective_linux_kernel_version}
 buildroot_defconfig=${BUILDROOT_DEFCONFIG}
 buildroot_resume=${BUILDROOT_RESUME}
 build_profile=${BUILD_PROFILE}

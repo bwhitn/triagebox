@@ -1,5 +1,7 @@
 (() => {
   const config = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
+  const pageTitleEl = document.getElementById("page-title");
+  const PAGE_TITLE = "TriageBox Linux v86 Test Rig";
   const serialEnabled = config.enableSerial === true;
   const xtermCtor = (() => {
     if (typeof window.Terminal === "function") {
@@ -87,6 +89,15 @@
     const seconds = Number.isFinite(raw) ? Math.max(1, raw) : 3;
     return seconds * 1000;
   })();
+
+  function applyPageTitle() {
+    document.title = PAGE_TITLE;
+    if (pageTitleEl) {
+      pageTitleEl.textContent = PAGE_TITLE;
+    }
+  }
+
+  applyPageTitle();
 
   function setStatus(text) {
     statusEl.textContent = `status: ${text}`;
