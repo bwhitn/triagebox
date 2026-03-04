@@ -49,6 +49,34 @@ rsync -a \
     --exclude 'uploads/*.qcow2' \
     --exclude 'uploads/*.iso' \
     "${ROOT_DIR}/public/" "${RUNTIME_PUBLIC_DIR}/"
+
+# Keep only the active v86 asset flavor in release payload to avoid shipping
+# duplicate runtime bundles (e.g. v86 and v86-min together).
+ACTIVE_V86_FLAVOR="$(sed -n 's/^[[:space:]]*v86AssetFlavor:[[:space:]]*"\([^"]\+\)".*/\1/p' "${RUNTIME_PUBLIC_DIR}/build-config.js" | head -n1)"
+if [[ -n "${ACTIVE_V86_FLAVOR}" ]] && [[ -d "${RUNTIME_PUBLIC_DIR}/assets" ]]; then
+    while IFS= read -r -d '' candidate; do
+        base="$(basename "${candidate}")"
+        if [[ "${base}" == "v86"* ]] && [[ "${base}" != "${ACTIVE_V86_FLAVOR}" ]]; then
+            rm -rf "${candidate}"
+        fi
+    done < <(find "${RUNTIME_PUBLIC_DIR}/assets" -maxdepth 1 -mindepth 1 -type d -print0)
+fi
+
+# Keep only the configured primary boot disk image under assets/.
+ACTIVE_DISK_IMAGE="$(sed -n 's/^[[:space:]]*diskImage:[[:space:]]*"\([^"]\+\)".*/\1/p' "${RUNTIME_PUBLIC_DIR}/vm-config.js" | head -n1)"
+if [[ -n "${ACTIVE_DISK_IMAGE}" ]]; then
+    ACTIVE_DISK_IMAGE="${ACTIVE_DISK_IMAGE#./}"
+fi
+if [[ -d "${RUNTIME_PUBLIC_DIR}/assets" ]]; then
+    while IFS= read -r -d '' image_file; do
+        rel_path="${image_file#${RUNTIME_PUBLIC_DIR}/}"
+        if [[ -n "${ACTIVE_DISK_IMAGE}" ]] && [[ "${rel_path}" == "${ACTIVE_DISK_IMAGE}" ]]; then
+            continue
+        fi
+        rm -f "${image_file}"
+    done < <(find "${RUNTIME_PUBLIC_DIR}/assets" -maxdepth 1 -type f \( -name '*.img' -o -name '*.qcow2' -o -name '*.iso' \) -print0)
+fi
+
 mkdir -p "${RUNTIME_PUBLIC_DIR}/uploads"
 touch "${RUNTIME_PUBLIC_DIR}/uploads/.gitkeep"
 install -m 0755 \

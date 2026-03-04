@@ -1,26 +1,62 @@
-(() => {
-  const config = Object.assign({}, window.V86_VM_CONFIG || {}, window.V86_BUILD_CONFIG || {});
-  const pageTitleEl = document.getElementById("page-title");
-  const PAGE_TITLE = "TriageBox Linux v86 Test Rig";
+((global) => {
+  function resolveMountElement(rootEl, explicit, fallbackId) {
+    if (explicit && typeof explicit === "object" && explicit.nodeType === 1) {
+      return explicit;
+    }
+    if (typeof explicit === "string" && explicit.trim().length > 0) {
+      const selector = explicit.trim();
+      if (rootEl && typeof rootEl.querySelector === "function") {
+        const localMatch = rootEl.matches && rootEl.matches(selector) ? rootEl : rootEl.querySelector(selector);
+        if (localMatch) {
+          return localMatch;
+        }
+      }
+      return document.querySelector(selector);
+    }
+    if (!fallbackId) {
+      return null;
+    }
+    if (rootEl && rootEl.id === fallbackId) {
+      return rootEl;
+    }
+    if (rootEl && typeof rootEl.querySelector === "function") {
+      const localMatch = rootEl.querySelector(`#${fallbackId}`);
+      if (localMatch) {
+        return localMatch;
+      }
+    }
+    return document.getElementById(fallbackId);
+  }
+
+  function createTriageBox(options = {}) {
+  const rootEl = options.rootEl && typeof options.rootEl === "object" ? options.rootEl : null;
+  const elements = options.elements || {};
+  const config = Object.assign({}, global.V86_VM_CONFIG || {}, global.V86_BUILD_CONFIG || {}, options.config || {});
+  const pageTitleEl = resolveMountElement(rootEl, elements.pageTitle, "page-title");
+  const screenContainerEl = resolveMountElement(rootEl, elements.screenContainer, "screen_container");
+  const PAGE_TITLE = typeof options.pageTitle === "string" && options.pageTitle.trim().length > 0
+    ? options.pageTitle.trim()
+    : "TriageBox Linux v86 Test Rig";
+  const shouldApplyPageTitle = options.setDocumentTitle !== false;
   const serialEnabled = config.enableSerial === true;
   const xtermCtor = (() => {
-    if (typeof window.Terminal === "function") {
-      return window.Terminal;
+    if (typeof global.Terminal === "function") {
+      return global.Terminal;
     }
-    if (window.Xterm && typeof window.Xterm.Terminal === "function") {
-      return window.Xterm.Terminal;
+    if (global.Xterm && typeof global.Xterm.Terminal === "function") {
+      return global.Xterm.Terminal;
     }
     return null;
   })();
   const xtermFitAddonCtor = (() => {
-    if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
-      return window.FitAddon.FitAddon;
+    if (global.FitAddon && typeof global.FitAddon.FitAddon === "function") {
+      return global.FitAddon.FitAddon;
     }
-    if (window.XtermAddonFit && typeof window.XtermAddonFit.FitAddon === "function") {
-      return window.XtermAddonFit.FitAddon;
+    if (global.XtermAddonFit && typeof global.XtermAddonFit.FitAddon === "function") {
+      return global.XtermAddonFit.FitAddon;
     }
-    if (typeof window.FitAddon === "function") {
-      return window.FitAddon;
+    if (typeof global.FitAddon === "function") {
+      return global.FitAddon;
     }
     return null;
   })();
@@ -29,29 +65,29 @@
   const cdromEnabled = config.enableCdrom === true;
   const rootExchangeEnabled = config.enableRootExchange !== false;
 
-  const statusEl = document.getElementById("status");
-  const ipsEl = document.getElementById("ips");
-  const serialPanelEl = document.getElementById("serial-panel");
-  const serialHintEl = document.getElementById("serial-hint");
-  const serialXtermWrapEl = document.getElementById("serial-xterm-wrap");
-  const serialXtermEl = document.getElementById("serial-xterm");
-  const vgaPanelEl = document.getElementById("vga-panel");
+  const statusEl = resolveMountElement(rootEl, elements.status, "status");
+  const ipsEl = resolveMountElement(rootEl, elements.ips, "ips");
+  const serialPanelEl = resolveMountElement(rootEl, elements.serialPanel, "serial-panel");
+  const serialHintEl = resolveMountElement(rootEl, elements.serialHint, "serial-hint");
+  const serialXtermWrapEl = resolveMountElement(rootEl, elements.serialXtermWrap, "serial-xterm-wrap");
+  const serialXtermEl = resolveMountElement(rootEl, elements.serialXterm, "serial-xterm");
+  const vgaPanelEl = resolveMountElement(rootEl, elements.vgaPanel, "vga-panel");
   const serialUseXterm = serialEnabled && !!xtermCtor;
 
-  const startBtn = document.getElementById("start");
-  const stopBtn = document.getElementById("stop");
-  const downloadPanelEl = document.getElementById("download-panel");
-  const downloadStatusEl = document.getElementById("download-status");
-  const downloadProgressEl = document.getElementById("download-progress");
-  const downloadDetailEl = document.getElementById("download-detail");
-  const diskPanelEl = document.getElementById("disk-panel");
-  const injectServerSrcEl = document.getElementById("inject-server-src");
-  const injectDiskPathEl = document.getElementById("inject-disk-path");
-  const injectDiskFileBtn = document.getElementById("inject-disk-file-btn");
-  const clearBootImportsBtn = document.getElementById("clear-boot-imports-btn");
-  const rootWatchStatusEl = document.getElementById("root-watch-status");
-  const rootWatchListEl = document.getElementById("root-watch-list");
-  const diskStatusEl = document.getElementById("disk-status");
+  const startBtn = resolveMountElement(rootEl, elements.start, "start");
+  const stopBtn = resolveMountElement(rootEl, elements.stop, "stop");
+  const downloadPanelEl = resolveMountElement(rootEl, elements.downloadPanel, "download-panel");
+  const downloadStatusEl = resolveMountElement(rootEl, elements.downloadStatus, "download-status");
+  const downloadProgressEl = resolveMountElement(rootEl, elements.downloadProgress, "download-progress");
+  const downloadDetailEl = resolveMountElement(rootEl, elements.downloadDetail, "download-detail");
+  const diskPanelEl = resolveMountElement(rootEl, elements.diskPanel, "disk-panel");
+  const injectServerSrcEl = resolveMountElement(rootEl, elements.injectServerSrc, "inject-server-src");
+  const injectDiskPathEl = resolveMountElement(rootEl, elements.injectDiskPath, "inject-disk-path");
+  const injectDiskFileBtn = resolveMountElement(rootEl, elements.injectDiskFileBtn, "inject-disk-file-btn");
+  const clearBootImportsBtn = resolveMountElement(rootEl, elements.clearBootImportsBtn, "clear-boot-imports-btn");
+  const rootWatchStatusEl = resolveMountElement(rootEl, elements.rootWatchStatus, "root-watch-status");
+  const rootWatchListEl = resolveMountElement(rootEl, elements.rootWatchList, "root-watch-list");
+  const diskStatusEl = resolveMountElement(rootEl, elements.diskStatus, "disk-status");
 
   const defaultBootDiskImage = config.diskImage || "assets/buildroot-linux.img";
 
@@ -91,7 +127,9 @@
   })();
 
   function applyPageTitle() {
-    document.title = PAGE_TITLE;
+    if (shouldApplyPageTitle) {
+      document.title = PAGE_TITLE;
+    }
     if (pageTitleEl) {
       pageTitleEl.textContent = PAGE_TITLE;
     }
@@ -100,11 +138,15 @@
   applyPageTitle();
 
   function setStatus(text) {
-    statusEl.textContent = `status: ${text}`;
+    if (statusEl) {
+      statusEl.textContent = `status: ${text}`;
+    }
   }
 
   function setIps(text) {
-    ipsEl.textContent = `instructions/sec: ${text}`;
+    if (ipsEl) {
+      ipsEl.textContent = `instructions/sec: ${text}`;
+    }
   }
 
   function setDiskStatus(text) {
@@ -901,7 +943,7 @@
       return emulator;
     }
 
-    if (typeof window.V86 !== "function") {
+    if (typeof global.V86 !== "function") {
       setStatus("error (libv86.js missing)");
       throw new Error("V86 constructor not found. Did you run make fetch-v86 or make build-v86-min?");
     }
@@ -962,9 +1004,12 @@
       vmOptions.disable_ne2k = true;
     }
     if (vgaEnabled) {
+      if (!screenContainerEl) {
+        throw new Error("vga mode requires a screen container element");
+      }
       vmOptions.vga_bios = { url: config.vgaBios || "assets/v86/vgabios.bin" };
       vmOptions.vga_memory_size = (config.vgaMemoryMb || 8) * 1024 * 1024;
-      vmOptions.screen_container = document.getElementById("screen_container");
+      vmOptions.screen_container = screenContainerEl;
     }
     if (networkRelayUrl.length > 0 && netDeviceType !== "none") {
       vmOptions.network_relay_url = networkRelayUrl;
@@ -980,7 +1025,7 @@
       };
     }
 
-    emulator = new window.V86(vmOptions);
+    emulator = new global.V86(vmOptions);
     applyRootShareTotalSize();
 
     emulator.add_listener("download-progress", (info) => {
@@ -1077,7 +1122,7 @@
     return emulator;
   }
 
-  startBtn.addEventListener("click", async () => {
+  async function startVm() {
     try {
       await diskStateReady;
       if (!emulator) {
@@ -1103,14 +1148,26 @@
       // Surface to console for debugging.
       console.error(err);
     }
-  });
+  }
 
-  stopBtn.addEventListener("click", async () => {
+  async function stopVm() {
     if (!emulator) {
       return;
     }
     await emulator.stop();
-  });
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      void startVm();
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => {
+      void stopVm();
+    });
+  }
 
   if (injectDiskFileBtn) {
     injectDiskFileBtn.addEventListener("click", () => {
@@ -1171,4 +1228,49 @@
   });
 
   setStatus("idle");
-})();
+  return {
+    config,
+    elements: {
+      pageTitleEl,
+      statusEl,
+      ipsEl,
+      serialPanelEl,
+      serialHintEl,
+      serialXtermWrapEl,
+      serialXtermEl,
+      vgaPanelEl,
+      screenContainerEl,
+      startBtn,
+      stopBtn,
+      downloadPanelEl,
+      downloadStatusEl,
+      downloadProgressEl,
+      downloadDetailEl,
+      diskPanelEl,
+      injectServerSrcEl,
+      injectDiskPathEl,
+      injectDiskFileBtn,
+      clearBootImportsBtn,
+      rootWatchStatusEl,
+      rootWatchListEl,
+      diskStatusEl
+    },
+    start: startVm,
+    stop: stopVm,
+    ensureEmulator,
+    getEmulator() {
+      return emulator;
+    },
+    requestRootWatchScan,
+    refreshDiskStateFromServer
+  };
+  }
+
+  global.createTriageBox = createTriageBox;
+  const hasDefaultMount = !!(
+    document.getElementById("start")
+    || document.getElementById("serial-xterm")
+    || document.getElementById("screen_container")
+  );
+  global.triageBoxApp = hasDefaultMount ? createTriageBox() : null;
+})(window);

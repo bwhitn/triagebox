@@ -370,6 +370,39 @@ Edit `public/vm-config.js`:
 - `enableEthernet` defaults to `false` (guest loopback only; no emulated ethernet controller)
 - `asyncDisk` defaults to `false` unless your server supports HTTP byte ranges
 
+## Embedding in another web app
+
+`public/app.js` now exposes a mountable API:
+
+```js
+const app = window.createTriageBox({
+  setDocumentTitle: false,
+  config: {
+    enableSerial: true,
+    enableVga: false
+  },
+  elements: {
+    status: "#my-status",
+    ips: "#my-ips",
+    serialPanel: "#my-serial-panel",
+    serialHint: "#my-serial-hint",
+    serialXtermWrap: "#my-serial-wrap",
+    serialXterm: "#my-serial",
+    start: "#my-start",
+    stop: "#my-stop"
+  }
+});
+
+await app.start();
+```
+
+Notes:
+
+- You do not need to use `public/index.html`.
+- If your page does not contain the default IDs, `app.js` will not auto-mount; it will only expose `window.createTriageBox`.
+- For VGA mode, provide a `screenContainer` element that contains the v86 screen markup.
+- All element bindings are optional; if you omit `start`/`stop`, drive the VM with `app.start()` / `app.stop()`.
+
 ## Notes
 
 - v86 exposes a single emulated CPU in this setup.
