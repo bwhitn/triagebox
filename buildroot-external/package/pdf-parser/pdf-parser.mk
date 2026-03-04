@@ -10,6 +10,10 @@ PDF_PARSER_SITE = https://didierstevens.com/files/software
 PDF_PARSER_LICENSE = Custom
 PDF_PARSER_DEPENDENCIES = python3 host-python3
 
+define PDF_PARSER_EXTRACT_CMDS
+	$(UNZIP) -d $(@D) $(PDF_PARSER_DL_DIR)/$(PDF_PARSER_SOURCE)
+endef
+
 define PDF_PARSER_INSTALL_TARGET_CMDS
 	src_file="$$(find "$(@D)" -type f -name 'pdf-parser.py' | sort | head -n1)"; \
 	test -n "$$src_file"; \

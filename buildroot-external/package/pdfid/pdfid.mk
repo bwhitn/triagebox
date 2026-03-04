@@ -10,6 +10,10 @@ PDFID_SITE = https://didierstevens.com/files/software
 PDFID_LICENSE = Custom
 PDFID_DEPENDENCIES = python3 host-python3
 
+define PDFID_EXTRACT_CMDS
+	$(UNZIP) -d $(@D) $(PDFID_DL_DIR)/$(PDFID_SOURCE)
+endef
+
 define PDFID_INSTALL_TARGET_CMDS
 	src_file="$$(find "$(@D)" -type f -name 'pdfid.py' | sort | head -n1)"; \
 	test -n "$$src_file"; \
