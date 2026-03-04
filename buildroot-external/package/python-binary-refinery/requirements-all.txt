@@ -23,14 +23,12 @@ extract-msg
 javaobj-py3>=0.4.0.1
 LnkParse3>=1.4.0
 jsbeautifier
-scapy
 pyzstd
 Pillow
 olefile
 uncompyle6>=3.9.3
 pikepdf<=9.5
 asn1crypto
-pypcapkit[scapy]>=1.3
 smda<2.0
 pyzbar
 pyonenote
