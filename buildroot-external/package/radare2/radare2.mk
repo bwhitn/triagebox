@@ -28,6 +28,7 @@ endef
 
 define RADARE2_INSTALL_TARGET_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE1) -C $(@D) DESTDIR=$(TARGET_DIR) install
+	rm -f $(TARGET_DIR)/usr/bin/r2sdb
 	rm -rf $(TARGET_DIR)/usr/include/libr
 	rm -rf $(TARGET_DIR)/usr/lib/pkgconfig
 	rm -rf $(TARGET_DIR)/usr/share/doc/radare2
