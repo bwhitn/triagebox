@@ -161,7 +161,7 @@ PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH
 define PYTHON_BINARY_REFINERY_PATCH_EXPLORE_WIDTH_TARGET
 	explore_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/explore.py"; \
 	if [ -f "$$explore_py" ] && ! grep -q '__NIXBROWSER_EXPLORE_WIDTH_GUARD__' "$$explore_py"; then \
-		$(HOST_DIR)/bin/python3 -c "from pathlib import Path; p = Path('$$explore_py'); s = p.read_text(encoding='utf-8'); old = \"        header = '{e:-<4}[{}]{e:-<{w}}'.format(name, w=width - len(name) - 6, e='')\"; new = \"        padding = max(0, width - len(name) - 6)\\n        # __NIXBROWSER_EXPLORE_WIDTH_GUARD__\\n        header = '{e:-<4}[{}]{e:-<{w}}'.format(name, w=padding, e='')\"; p.write_text(s.replace(old, new), encoding='utf-8')"; \
+		$(HOST_DIR)/bin/python3 $(BR2_EXTERNAL_NIXBROWSER_PATH)/scripts/patch-refinery-explore.py "$$explore_py"; \
 	fi
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH_EXPLORE_WIDTH_TARGET
