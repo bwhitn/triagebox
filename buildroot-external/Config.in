@@ -1,4 +1,6 @@
 menu "Nixbrowser packages"
+	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/pdfid/Config.in"
+	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/pdf-parser/Config.in"
 	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/qpdf11/Config.in"
 	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/yara-x/Config.in"
 	source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-binary-refinery/Config.in"

@@ -1,0 +1,5 @@
+config BR2_PACKAGE_PDF_PARSER
+	bool "pdf-parser"
+	select BR2_PACKAGE_PYTHON3
+	help
+	  Didier Stevens' pdf-parser tool for PDF object and stream analysis.

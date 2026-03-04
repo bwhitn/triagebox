@@ -120,8 +120,8 @@ replacements = {
     "{{BUILDROOT_VERSION}}": os.environ["BUILDROOT_VERSION_RENDER"],
     "__BUILDROOT_VERSION__": os.environ["BUILDROOT_VERSION_RENDER"],
 }
-for needle, value in replacements.items():
-    text = text.replace(needle, value)
+for needle in sorted(replacements, key=len, reverse=True):
+    text = text.replace(needle, replacements[needle])
 motd_path.write_text(text, encoding="utf-8")
 PY
 }
@@ -711,6 +711,8 @@ BR2_PACKAGE_VIM=y
 BR2_PACKAGE_NANO=y
 BR2_PACKAGE_NANO_TINY=y
 BR2_PACKAGE_PERL=y
+BR2_PACKAGE_PDFID=y
+BR2_PACKAGE_PDF_PARSER=y
 BR2_PACKAGE_YARA_X=y
 BR2_PACKAGE_PYTHON_PYBIND=y
 BR2_PACKAGE_ZBAR=y
