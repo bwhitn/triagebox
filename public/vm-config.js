@@ -6,7 +6,7 @@ window.V86_VM_CONFIG = {
   initrd: "assets/initrd.img",
   // Primary boot/root disk (Buildroot image).
   diskImage: "assets/buildroot-linux.img",
-  // Kernel root= value. With the ext2 filesystem image mounted as hda in v86,
+  // Kernel root= value. With the root filesystem image mounted as hda in v86,
   // /dev/sda is the direct root block device (no partition table).
   rootDevice: "/dev/sda",
   // Optional override; if omitted, app.js chooses based on enableSerial/build flag.

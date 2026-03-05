@@ -955,7 +955,7 @@
 
     const rootFsType = typeof config.rootFsType === "string" && config.rootFsType.trim().length > 0
       ? config.rootFsType.trim()
-      : "ext4";
+      : "erofs";
     const rootDevice = typeof config.rootDevice === "string" && config.rootDevice.trim().length > 0
       ? config.rootDevice.trim()
       : "/dev/sda";

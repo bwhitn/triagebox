@@ -93,7 +93,7 @@ fi
 
 prefetch_wheels="${PREFETCH_REFINERY_WHEELS:-1}"
 require_buildroot_target="${REFINERY_REQUIRE_BUILDROOT_TARGET:-1}"
-rootfs_fs="${ROOTFS_FS:-ext2}"
+rootfs_fs="${ROOTFS_FS:-erofs}"
 if [[ "${prefetch_wheels}" == "1" ]] && [[ "${require_buildroot_target}" != "1" ]]; then
     if ! python3 -m pip --version >/dev/null 2>&1; then
         missing+=("python3-pip (python3 -m pip)")

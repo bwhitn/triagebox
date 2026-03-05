@@ -10,7 +10,7 @@ V86_ASSET_FLAVOR="${V86_ASSET_FLAVOR:-v86}"
 PROJECT_VERSION="0.0.0"
 BUILDROOT_VERSION="unknown"
 LINUX_VERSION="unknown"
-ROOTFS_TYPE="ext2"
+ROOTFS_TYPE="erofs"
 
 if [[ "${ENABLE_SERIAL}" != "0" && "${ENABLE_SERIAL}" != "1" ]]; then
     echo "ENABLE_SERIAL must be 0 or 1 (got: ${ENABLE_SERIAL})" >&2
