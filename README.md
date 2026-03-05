@@ -1,3 +1,7 @@
+# TriageBox Linux
+
+A small browser based linux using buildroot/v86 with a light set of RE Tools.
+
 # Buildroot v86 Environment
 
 This repository provides a minimal Buildroot-based v86 setup with:
