@@ -69,6 +69,8 @@ SHRINK_PAD_MB="${SHRINK_PAD_MB:-0}"
 SHRINK_MIN_MB="${SHRINK_MIN_MB:-0}"
 ROOTFS_RESERVED_BLOCKS_PERCENT="${ROOTFS_RESERVED_BLOCKS_PERCENT:-0}"
 VERIFY_RUNTIME_ARTIFACTS="${VERIFY_RUNTIME_ARTIFACTS:-1}"
+ROOTFS_FS="${ROOTFS_FS:-ext2}" # ext2|erofs
+EROFS_COMPRESSION="${EROFS_COMPRESSION:-none}" # none|lz4|lz4hc|lzma|deflate
 
 DISK_IMAGE="${ASSETS_DIR}/buildroot-linux.img"
 VMLINUX_OUT="${ASSETS_DIR}/vmlinuz"
@@ -187,7 +189,7 @@ stage_host_isl_if_needed() {
     [[ -f "${OUT_DIR}/host/include/isl/schedule.h" ]]
 }
 
-for cmd in curl tar make nproc find sort awk du cp truncate mke2fs gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf python3; do
+for cmd in curl tar make nproc find sort awk du cp truncate gzip cpio stat rm mkdir date mktemp chmod grep dirname wc tr sed readelf python3; do
     need_cmd "$cmd"
 done
 
@@ -279,6 +281,21 @@ fi
 if [[ "${VERIFY_RUNTIME_ARTIFACTS}" != "0" ]] && [[ "${VERIFY_RUNTIME_ARTIFACTS}" != "1" ]]; then
     echo "VERIFY_RUNTIME_ARTIFACTS must be 0 or 1 (got: ${VERIFY_RUNTIME_ARTIFACTS})" >&2
     exit 1
+fi
+if [[ "${ROOTFS_FS}" != "ext2" ]] && [[ "${ROOTFS_FS}" != "erofs" ]]; then
+    echo "ROOTFS_FS must be 'ext2' or 'erofs' (got: ${ROOTFS_FS})" >&2
+    exit 1
+fi
+if [[ "${EROFS_COMPRESSION}" != "none" ]] && [[ "${EROFS_COMPRESSION}" != "lz4" ]] && \
+    [[ "${EROFS_COMPRESSION}" != "lz4hc" ]] && [[ "${EROFS_COMPRESSION}" != "lzma" ]] && \
+    [[ "${EROFS_COMPRESSION}" != "deflate" ]]; then
+    echo "EROFS_COMPRESSION must be one of: none,lz4,lz4hc,lzma,deflate (got: ${EROFS_COMPRESSION})" >&2
+    exit 1
+fi
+if [[ "${ROOTFS_FS}" == "ext2" ]]; then
+    need_cmd mke2fs
+else
+    need_cmd mkfs.erofs
 fi
 
 if [[ "${BUILDROOT_CCACHE}" == "1" ]]; then
@@ -1116,7 +1133,7 @@ if [[ ! -f "${ROOTFS_TAR}" ]]; then
     exit 1
 fi
 
-echo "[6/8] Exporting kernel/initrd and creating ext2 root disk"
+echo "[6/8] Exporting kernel/initrd and creating ${ROOTFS_FS} root disk"
 cp "${VMLINUX_PATH}" "${VMLINUX_OUT}"
 if [[ "${INITRD_MODE}" == "full" ]]; then
     if [[ -f "${ROOTFS_CPIO_GZ}" ]]; then
@@ -1284,31 +1301,46 @@ mkdir -p "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp"
 chmod 1777 "${EXPORT_DIR}/tmp" "${EXPORT_DIR}/var/tmp" || true
 
 rootfs_mb="$(du -sm "${EXPORT_DIR}" | awk '{print $1}')"
-if [[ -n "${DISK_MB}" ]]; then
-    if ! [[ "${DISK_MB}" =~ ^[0-9]+$ ]] || (( DISK_MB < 32 )); then
-        echo "DISK_MB must be an integer >= 32 (got: ${DISK_MB})" >&2
-        exit 1
+if [[ "${ROOTFS_FS}" == "ext2" ]]; then
+    if [[ -n "${DISK_MB}" ]]; then
+        if ! [[ "${DISK_MB}" =~ ^[0-9]+$ ]] || (( DISK_MB < 32 )); then
+            echo "DISK_MB must be an integer >= 32 (got: ${DISK_MB})" >&2
+            exit 1
+        fi
+        planned_disk_mb="${DISK_MB}"
+    else
+        planned_disk_mb="$((rootfs_mb + EXTRA_MB))"
+        if (( planned_disk_mb < MIN_DISK_MB )); then
+            planned_disk_mb="${MIN_DISK_MB}"
+        fi
     fi
-    planned_disk_mb="${DISK_MB}"
+    echo "rootfs size: ${rootfs_mb}MB"
+    echo "planned disk size: ${planned_disk_mb}MB"
 else
-    planned_disk_mb="$((rootfs_mb + EXTRA_MB))"
-    if (( planned_disk_mb < MIN_DISK_MB )); then
-        planned_disk_mb="${MIN_DISK_MB}"
-    fi
+    planned_disk_mb=0
+    echo "rootfs size: ${rootfs_mb}MB"
+    echo "planned disk size: auto (${ROOTFS_FS})"
 fi
 
-echo "rootfs size: ${rootfs_mb}MB"
-echo "planned disk size: ${planned_disk_mb}MB"
-
 rm -f "${DISK_IMAGE}"
-truncate -s "${planned_disk_mb}M" "${DISK_IMAGE}"
-# ext2 keeps metadata overhead lower than ext4 and avoids journal traffic.
-# Reserve 0% blocks by default because persistent user writes go through /root 9p.
-mke2fs -q -t ext2 -m "${ROOTFS_RESERVED_BLOCKS_PERCENT}" -L rootfs -F -d "${EXPORT_DIR}" "${DISK_IMAGE}"
+if [[ "${ROOTFS_FS}" == "ext2" ]]; then
+    truncate -s "${planned_disk_mb}M" "${DISK_IMAGE}"
+    # ext2 keeps metadata overhead lower than ext4 and avoids journal traffic.
+    # Reserve 0% blocks by default because persistent user writes go through /root 9p.
+    mke2fs -q -t ext2 -m "${ROOTFS_RESERVED_BLOCKS_PERCENT}" -L rootfs -F -d "${EXPORT_DIR}" "${DISK_IMAGE}"
+else
+    erofs_opts=("-L" "rootfs")
+    if [[ "${EROFS_COMPRESSION}" != "none" ]]; then
+        erofs_opts+=("-z${EROFS_COMPRESSION}")
+    fi
+    mkfs.erofs "${erofs_opts[@]}" "${DISK_IMAGE}" "${EXPORT_DIR}" >/dev/null
+fi
 
-if [[ "${AUTO_SHRINK}" == "1" ]]; then
+if [[ "${ROOTFS_FS}" == "ext2" ]] && [[ "${AUTO_SHRINK}" == "1" ]]; then
     echo "[7/8] Auto-shrinking disk image"
     PAD_MB="${SHRINK_PAD_MB}" MIN_MB="${SHRINK_MIN_MB}" "${ROOT_DIR}/scripts/shrink-image.sh" "${DISK_IMAGE}"
+elif [[ "${ROOTFS_FS}" != "ext2" ]]; then
+    echo "[7/8] Auto-shrinking skipped (ROOTFS_FS=${ROOTFS_FS})"
 else
     echo "[7/8] Auto-shrinking skipped (AUTO_SHRINK=${AUTO_SHRINK})"
 fi
@@ -1347,6 +1379,8 @@ legal_info_archive_size_mb=${legal_info_archive_size_mb}
 binary_refinery_version=${BINARY_REFINERY_VERSION}
 python_lief_version=${PYTHON_LIEF_VERSION}
 disk_size_mb=${final_disk_mb}
+rootfs_type=${ROOTFS_FS}
+erofs_compression=${EROFS_COMPRESSION}
 initrd_mode=${INITRD_MODE}
 kernel=$(basename "${VMLINUX_PATH}")
 rootfs_source=$(basename "${ROOTFS_TAR}")

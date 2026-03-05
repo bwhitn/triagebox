@@ -10,6 +10,7 @@ V86_ASSET_FLAVOR="${V86_ASSET_FLAVOR:-v86}"
 PROJECT_VERSION="0.0.0"
 BUILDROOT_VERSION="unknown"
 LINUX_VERSION="unknown"
+ROOTFS_TYPE="ext2"
 
 if [[ "${ENABLE_SERIAL}" != "0" && "${ENABLE_SERIAL}" != "1" ]]; then
     echo "ENABLE_SERIAL must be 0 or 1 (got: ${ENABLE_SERIAL})" >&2
@@ -34,6 +35,9 @@ if [[ -f "${BOOT_INFO_FILE}" ]]; then
             linux_version)
                 LINUX_VERSION="${value}"
                 ;;
+            rootfs_type)
+                ROOTFS_TYPE="${value}"
+                ;;
         esac
     done < "${BOOT_INFO_FILE}"
 fi
@@ -54,9 +58,9 @@ window.V86_BUILD_CONFIG = {
   libv86Path: "assets/${V86_ASSET_FLAVOR}/libv86.js",
   wasmPath: "assets/${V86_ASSET_FLAVOR}/v86.wasm",
   v86AssetFlavor: "${V86_ASSET_FLAVOR}",
-  rootFsType: "ext2",
+  rootFsType: "${ROOTFS_TYPE}",
   rootfsFlavor: "buildroot"
 };
 EOF
 
-echo "Wrote ${OUT_FILE} (projectVersion=${PROJECT_VERSION}, buildrootVersion=${BUILDROOT_VERSION}, linuxVersion=${LINUX_VERSION}, enableSerial=${serial_flag}, v86AssetFlavor=${V86_ASSET_FLAVOR}, rootfsFlavor=buildroot, rootFsType=ext2)"
+echo "Wrote ${OUT_FILE} (projectVersion=${PROJECT_VERSION}, buildrootVersion=${BUILDROOT_VERSION}, linuxVersion=${LINUX_VERSION}, enableSerial=${serial_flag}, v86AssetFlavor=${V86_ASSET_FLAVOR}, rootfsFlavor=buildroot, rootFsType=${ROOTFS_TYPE})"

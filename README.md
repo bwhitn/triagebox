@@ -201,6 +201,8 @@ The workflow:
 - `SHRINK_PAD_MB` (default `0`)
 - `SHRINK_MIN_MB` (default `0`)
 - `ROOTFS_RESERVED_BLOCKS_PERCENT` (default `0`; ext2 reserved blocks percentage used by `mke2fs`)
+- `ROOTFS_FS` (default `ext2`; supported: `ext2`, `erofs`)
+- `EROFS_COMPRESSION` (default `none`; when `ROOTFS_FS=erofs`: `none`, `lz4`, `lz4hc`, `lzma`, `deflate`)
 - `ENABLE_SERIAL` (default `1`, accepted: `0` or `1`)
 - `FETCH_VGA_BIOS` (default `0`; set `1` only when you enable VGA output)
 - `V86_ASSET_FLAVOR` (default `v86`; set to `v86-min` to use source-built v86 assets in `public/assets/v86-min`)
@@ -234,6 +236,7 @@ Examples:
 BUILDROOT_VERSION=2026.02-rc1 make build-disk
 BUILDROOT_TOPLEVEL_PARALLEL=1 BUILDROOT_JOBS=8 make build-disk-resume
 BUILDROOT_ONLY=kernel make build-disk
+ROOTFS_FS=erofs EROFS_COMPRESSION=lz4 make build-disk
 INITRD_MODE=minimal make build-disk
 INITRD_MODE=full make build-disk
 DISK_MB=512 make build-disk
