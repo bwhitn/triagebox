@@ -6,7 +6,7 @@
   root.TriageBoxEmbedCommon = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const API_VERSION = "1.0";
-  const CAPABILITIES = ["start", "stop", "inject", "list_root", "download"];
+  const CAPABILITIES = ["start", "stop", "inject", "list_root", "read_root", "download_root", "download"];
 
   function makeError(code, message, details) {
     const error = new Error(message);
@@ -84,9 +84,13 @@
     const queryParentOrigins = parseOriginList(params.get("parent_origin") || params.get("parent_origins") || "");
     const configParentOrigins = parseOriginList(options && options.configParentOrigins);
     const embedMode = parseBooleanFlag(params.get("embed"), false);
+    const embedLayoutRaw = (params.get("embed_layout") || "").trim().toLowerCase();
+    const embedLayout = embedLayoutRaw === "vga" || embedLayoutRaw === "both" ? embedLayoutRaw : "serial";
     const autostart = parseBooleanFlag(params.get("autostart"), false);
     const autoloadSrc = (params.get("autoload_src") || "").trim();
     const autoloadDst = (params.get("autoload_dst") || "").trim();
+    const autoloadModeRaw = (params.get("autoload_mode") || "").trim().toLowerCase();
+    const autoloadMode = autoloadModeRaw === "runtime" ? "runtime" : "stage";
     const referrerOrigin = parseReferrerOrigin(options && options.referrer);
     const locationOrigin = options && options.locationOrigin ? String(options.locationOrigin) : "";
 
@@ -102,9 +106,11 @@
 
     return {
       embedMode,
+      embedLayout,
       autostart,
       autoloadSrc,
       autoloadDst,
+      autoloadMode,
       allowedParentOrigins: allowedOrigins,
     };
   }
@@ -198,8 +204,26 @@
     if (!message || typeof message !== "object" || Array.isArray(message)) {
       throw makeError("ENVELOPE_INVALID", "message envelope must be an object");
     }
+    if (message.source === "host" && message.type === "command") {
+      if (message.id === undefined || message.id === null || String(message.id).trim() === "") {
+        throw makeError("ENVELOPE_INVALID", "message id is required");
+      }
+      if (typeof message.cmd !== "string" || message.cmd.trim() === "") {
+        throw makeError("ENVELOPE_INVALID", "message cmd is required");
+      }
+      const payload = message.payload && typeof message.payload === "object" && !Array.isArray(message.payload)
+        ? message.payload
+        : {};
+      return {
+        id: String(message.id),
+        command: message.cmd.trim(),
+        payload,
+        protocol: "host-v1",
+      };
+    }
+
     if (message.type !== "tb.command") {
-      throw makeError("ENVELOPE_INVALID", "message type must be 'tb.command'");
+      throw makeError("ENVELOPE_INVALID", "message type must be 'command' or 'tb.command'");
     }
     if (message.id === undefined || message.id === null || String(message.id).trim() === "") {
       throw makeError("ENVELOPE_INVALID", "message id is required");
@@ -214,6 +238,7 @@
       id: String(message.id),
       command: message.command.trim(),
       payload,
+      protocol: "tb-v1",
     };
   }
 

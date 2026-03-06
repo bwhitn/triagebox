@@ -88,6 +88,12 @@ install -m 0755 \
     "${ROOT_DIR}/scripts/serve-compressed.py" \
     "${RUNTIME_SCRIPTS_DIR}/"
 install -m 0644 "${ROOT_DIR}/VERSION" "${STAGE_DIR}/VERSION"
+if [[ -f "${ROOT_DIR}/EMBED_API.md" ]]; then
+    install -m 0644 "${ROOT_DIR}/EMBED_API.md" "${STAGE_DIR}/EMBED_API.md"
+fi
+if [[ -f "${ROOT_DIR}/README.md" ]]; then
+    install -m 0644 "${ROOT_DIR}/README.md" "${STAGE_DIR}/README.md"
+fi
 
 cat > "${STAGE_DIR}/release-manifest.txt" <<EOF
 project=${RELEASE_BASENAME}

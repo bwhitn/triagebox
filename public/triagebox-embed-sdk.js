@@ -70,9 +70,10 @@
       counter += 1;
       const id = String(counter);
       const envelope = {
-        type: "tb.command",
+        source: "host",
+        type: "command",
         id,
-        command,
+        cmd: command,
         payload: isObject(payload) ? payload : {},
       };
       return new Promise((resolve, reject) => {
@@ -100,7 +101,9 @@
       if (!isObject(data) || typeof data.type !== "string") {
         return;
       }
-      if (data.type === "tb.response") {
+      const isModernResponse = data.type === "response" && data.source === "triagebox";
+      const isLegacyResponse = data.type === "tb.response";
+      if (isModernResponse || isLegacyResponse) {
         const id = data.id === undefined || data.id === null ? "" : String(data.id);
         if (!id || !pending.has(id)) {
           return;
@@ -123,7 +126,9 @@
         }
         return;
       }
-      if (data.type === "tb.event") {
+      const isModernEvent = data.type === "event" && data.source === "triagebox";
+      const isLegacyEvent = data.type === "tb.event";
+      if (isModernEvent || isLegacyEvent) {
         const eventName = typeof data.event === "string" ? data.event : "unknown";
         const payload = isObject(data.payload) ? data.payload : {};
         if (eventName === "ready") {
@@ -155,11 +160,34 @@
       inject(payload) {
         return postCommand("inject", payload || {});
       },
+      async listRootFiles() {
+        const result = await postCommand("list_root", {});
+        return Array.isArray(result.files) ? result.files : [];
+      },
+      async readRootFile(path) {
+        const result = await postCommand("read_root", { path });
+        if (result.bytes instanceof Uint8Array) {
+          return result.bytes;
+        }
+        if (result.bytes instanceof ArrayBuffer) {
+          return new Uint8Array(result.bytes);
+        }
+        if (ArrayBuffer.isView(result.bytes) && result.bytes.buffer instanceof ArrayBuffer) {
+          const view = result.bytes;
+          return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+        }
+        return new Uint8Array(0);
+      },
+      downloadRootFile(path) {
+        return postCommand("download_root", { path });
+      },
+      // Backward-compatible aliases.
       listRoot() {
         return postCommand("list_root", {});
       },
       download(payload) {
-        return postCommand("download", payload || {});
+        const resolved = isObject(payload) ? payload : { path: payload };
+        return postCommand("download_root", resolved || {});
       },
       on,
       destroy,

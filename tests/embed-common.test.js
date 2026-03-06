@@ -9,6 +9,18 @@ test("embed=1 is parsed as embed mode", () => {
     locationOrigin: "https://tb.local",
   });
   assert.equal(cfg.embedMode, true);
+  assert.equal(cfg.embedLayout, "serial");
+  assert.equal(cfg.autoloadMode, "stage");
+});
+
+test("embed_layout and autoload_mode parse expected values", () => {
+  const cfg = common.parseEmbedConfig("?embed=1&embed_layout=both&autoload_mode=runtime", {
+    referrer: "",
+    locationOrigin: "https://tb.local",
+  });
+  assert.equal(cfg.embedMode, true);
+  assert.equal(cfg.embedLayout, "both");
+  assert.equal(cfg.autoloadMode, "runtime");
 });
 
 test("autoload query success path parses expected values", () => {
@@ -65,7 +77,20 @@ test("sanitizeRootPath only allows /root/*", () => {
   assert.throws(() => common.sanitizeRootPath("/tmp/file.bin"), /under \/root/);
 });
 
-test("validateCommandEnvelope accepts valid and rejects malformed envelopes", () => {
+test("validateCommandEnvelope accepts modern host envelopes", () => {
+  const envelope = common.validateCommandEnvelope({
+    source: "host",
+    type: "command",
+    id: "abc",
+    cmd: "start",
+    payload: {},
+  });
+  assert.equal(envelope.id, "abc");
+  assert.equal(envelope.command, "start");
+  assert.equal(envelope.protocol, "host-v1");
+});
+
+test("validateCommandEnvelope accepts legacy and rejects malformed envelopes", () => {
   const envelope = common.validateCommandEnvelope({
     type: "tb.command",
     id: "1",
@@ -74,10 +99,11 @@ test("validateCommandEnvelope accepts valid and rejects malformed envelopes", ()
   });
   assert.equal(envelope.id, "1");
   assert.equal(envelope.command, "start");
+  assert.equal(envelope.protocol, "tb-v1");
 
   assert.throws(() => {
     common.validateCommandEnvelope({ type: "wrong", id: "1", command: "start" });
-  }, /tb.command/);
+  }, /command/);
 });
 
 test("origin checks allow expected origin and reject others", () => {

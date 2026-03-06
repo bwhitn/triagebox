@@ -266,39 +266,43 @@ body.embed-mode {
 body.embed-mode main {
   max-width: none;
   margin: 0;
-  display: block;
+  display: grid;
   width: 100vw;
   height: 100vh;
+  gap: 0;
 }
 
 body.embed-mode #page-title,
-body.embed-mode .panel:not(#serial-panel),
+body.embed-mode #status-panel,
+body.embed-mode #disk-panel,
 body.embed-mode #serial-hint,
-body.embed-mode #serial-panel .panel-header {
+body.embed-mode #serial-panel .panel-header,
+body.embed-mode #vga-panel h2 {
   display: none !important;
 }
 
-body.embed-mode #serial-panel {
-  width: 100vw;
-  height: 100vh;
+body.embed-mode #serial-panel,
+body.embed-mode #vga-panel {
   padding: 0;
   border: 0;
   border-radius: 0;
   background: #000;
+  min-height: 0;
 }
 
 body.embed-mode .embed-status-bar {
   display: block;
-  position: absolute;
+  position: fixed;
   top: 0.6rem;
   left: 0.6rem;
-  z-index: 10;
+  z-index: 30;
   max-width: calc(100vw - 1.2rem);
+  pointer-events: none;
 }
 
 body.embed-mode #serial-xterm-wrap {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   max-width: none;
@@ -310,4 +314,60 @@ body.embed-mode #serial-xterm-wrap {
 
 body.embed-mode #serial-xterm .xterm {
   padding: 0.55rem 0.5rem 0.5rem;
+}
+
+body.embed-mode #screen_container {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+body.embed-mode #screen {
+  width: 100%;
+  height: 100%;
+}
+
+body.embed-mode.embed-layout-serial main {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+body.embed-mode.embed-layout-serial #serial-panel {
+  display: block;
+}
+
+body.embed-mode.embed-layout-serial #vga-panel {
+  display: none !important;
+}
+
+body.embed-mode.embed-layout-vga main {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+body.embed-mode.embed-layout-vga #serial-panel {
+  display: none !important;
+}
+
+body.embed-mode.embed-layout-vga #vga-panel {
+  display: block;
+}
+
+body.embed-mode.embed-layout-both main {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+body.embed-mode.embed-layout-both #serial-panel,
+body.embed-mode.embed-layout-both #vga-panel {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  body.embed-mode.embed-layout-both main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
 }

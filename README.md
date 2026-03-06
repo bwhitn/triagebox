@@ -414,48 +414,56 @@ Official iframe embed mode:
 
 - Load iframe as `/?embed=1`.
 - Optional query params:
+  - `embed_layout=serial|vga|both` (default `serial`)
   - `autostart=1|0` (default `0`)
-  - `autoload_src=<url>` (http/https only; same-origin enforced by default)
+  - `autoload_src=<url-or-path>` (http/https only; same-origin enforced by default)
   - `autoload_dst=/root/<name>` (sanitized to basename under `/root/`)
+  - `autoload_mode=stage|runtime` (default `stage`)
   - `parent_origin=https://your-host.example` (or `parent_origins=a,b`)
-- In embed mode, UI is terminal-first (full viewport) with minimal status and no standalone chrome panels.
+- In embed mode, UI is viewport-first with `embed_layout` deciding serial/VGA/both.
 
 PostMessage API (version `1.0`):
 
 - Command envelope (parent -> iframe):
 
 ```json
-{"type":"tb.command","id":"1","command":"start","payload":{}}
+{"source":"host","type":"command","id":"1","cmd":"start","payload":{}}
 ```
 
 - Response envelope (iframe -> parent):
 
 ```json
-{"type":"tb.response","id":"1","ok":true,"payload":{}}
-{"type":"tb.response","id":"1","ok":false,"error":"reason","payload":{"code":"CODE","message":"reason"}}
+{"source":"triagebox","type":"response","id":"1","ok":true,"payload":{}}
+{"source":"triagebox","type":"response","id":"1","ok":false,"error":"reason","payload":{"code":"CODE","message":"reason"}}
 ```
 
 - Event envelope (iframe -> parent):
 
 ```json
-{"type":"tb.event","event":"ready","payload":{"api_version":"1.0","capabilities":["start","stop","inject","list_root","download"]}}
+{"source":"triagebox","type":"event","event":"ready","payload":{"api_version":"1.0","capabilities":["start","stop","inject","list_root","read_root","download_root"]}}
 ```
 
 - Commands:
   - `start`
   - `stop`
-  - `inject` payload: `{"src":"<url>","dst":"/root/file.bin","overwrite":true}`
+  - `inject` payload: `{"src":"<url>","dst":"/root/file.bin","mode":"stage|runtime","overwrite":true}`
   - `list_root`
-  - `download` payload: `{"path":"/root/file.bin"}`
+  - `read_root` payload: `{"path":"/root/file.bin"}`
+  - `download_root` payload: `{"path":"/root/file.bin"}`
+  - Legacy alias still accepted: `download`
 
 - Events:
   - `ready`
+  - `vm_ready`
   - `vm_started`
   - `vm_stopped`
   - `inject_ok`
   - `inject_error`
   - `root_files_changed`
+  - `read_root_ok`
+  - `read_root_error`
   - `download_done`
+  - `download_error`
   - `error`
 
 `root_files_changed`/`list_root` payload file record format:
@@ -465,7 +473,9 @@ PostMessage API (version `1.0`):
 Thin SDK:
 
 - `public/triagebox-embed-sdk.js` exposes `window.TriageBoxEmbed.create(iframeEl, { targetOrigin })`.
-- Methods: `start()`, `stop()`, `inject({src,dst,overwrite})`, `listRoot()`, `download({path})`, `on(event, cb)`.
+- Methods: `start()`, `stop()`, `inject({src,dst,mode,overwrite})`, `listRootFiles()`, `readRootFile(path)`, `downloadRootFile(path)`, `on(event, cb)`.
+- Full schema/examples are in `EMBED_API.md`.
+- Legacy `tb.command` / `tb.response` / `tb.event` is still accepted/emitted for compatibility.
 
 ## Notes
 

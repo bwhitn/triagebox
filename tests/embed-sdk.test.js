@@ -55,20 +55,22 @@ test("SDK correlates command responses by id", async () => {
   const stopPromise = sdk.stop();
 
   assert.equal(sent.length, 2);
-  const startMsg = sent.find((item) => item.message.command === "start");
-  const stopMsg = sent.find((item) => item.message.command === "stop");
+  const startMsg = sent.find((item) => item.message.cmd === "start");
+  const stopMsg = sent.find((item) => item.message.cmd === "stop");
   assert.ok(startMsg);
   assert.ok(stopMsg);
+  assert.equal(startMsg.message.source, "host");
+  assert.equal(startMsg.message.type, "command");
 
   harness.dispatch("message", {
     source: iframeContentWindow,
     origin: "https://parent.local",
-    data: { type: "tb.response", id: stopMsg.message.id, ok: true, payload: { stopped: true } },
+    data: { source: "triagebox", type: "response", id: stopMsg.message.id, ok: true, payload: { stopped: true } },
   });
   harness.dispatch("message", {
     source: iframeContentWindow,
     origin: "https://parent.local",
-    data: { type: "tb.response", id: startMsg.message.id, ok: true, payload: { started: true } },
+    data: { source: "triagebox", type: "response", id: startMsg.message.id, ok: true, payload: { started: true } },
   });
 
   const [startResult, stopResult] = await Promise.all([startPromise, stopPromise]);
@@ -97,7 +99,8 @@ test("SDK emits root_files_changed event payload", async () => {
     source: iframeContentWindow,
     origin: "https://parent.local",
     data: {
-      type: "tb.event",
+      source: "triagebox",
+      type: "event",
       event: "root_files_changed",
       payload: {
         files: [
@@ -128,14 +131,15 @@ test("SDK download command returns payload with download_url", async () => {
   const iframeEl = { nodeType: 1, tagName: "IFRAME", contentWindow: iframeContentWindow };
   const sdk = sdkModule.create(iframeEl, { targetOrigin: "https://parent.local" });
 
-  const pending = sdk.download({ path: "/root/sample.bin" });
-  assert.equal(sentMessage.command, "download");
+  const pending = sdk.downloadRootFile("/root/sample.bin");
+  assert.equal(sentMessage.cmd, "download_root");
 
   harness.dispatch("message", {
     source: iframeContentWindow,
     origin: "https://parent.local",
     data: {
-      type: "tb.response",
+      source: "triagebox",
+      type: "response",
       id: sentMessage.id,
       ok: true,
       payload: {
@@ -148,6 +152,48 @@ test("SDK download command returns payload with download_url", async () => {
   const result = await pending;
   assert.equal(result.path, "/root/sample.bin");
   assert.equal(result.download_url, "blob:https://tb.local/1234");
+
+  sdk.destroy();
+  global.window = prevWindow;
+});
+
+test("SDK readRootFile returns Uint8Array", async () => {
+  const harness = createWindowHarness();
+  const prevWindow = global.window;
+  global.window = harness.window;
+
+  let sentMessage = null;
+  const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
+  const iframeContentWindow = {
+    postMessage(message) {
+      sentMessage = message;
+    },
+  };
+  const iframeEl = { nodeType: 1, tagName: "IFRAME", contentWindow: iframeContentWindow };
+  const sdk = sdkModule.create(iframeEl, { targetOrigin: "https://parent.local" });
+
+  const pending = sdk.readRootFile("/root/sample.bin");
+  assert.equal(sentMessage.cmd, "read_root");
+
+  harness.dispatch("message", {
+    source: iframeContentWindow,
+    origin: "https://parent.local",
+    data: {
+      source: "triagebox",
+      type: "response",
+      id: sentMessage.id,
+      ok: true,
+      payload: {
+        path: "/root/sample.bin",
+        bytes,
+      },
+    },
+  });
+
+  const result = await pending;
+  assert.equal(result instanceof Uint8Array, true);
+  assert.equal(result.length, 4);
+  assert.equal(result[0], 1);
 
   sdk.destroy();
   global.window = prevWindow;

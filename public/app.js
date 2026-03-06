@@ -35,7 +35,15 @@
   const embedCommon = global.TriageBoxEmbedCommon || {};
   const parseEmbedConfig = typeof embedCommon.parseEmbedConfig === "function"
     ? embedCommon.parseEmbedConfig
-    : (() => ({ embedMode: false, autostart: false, autoloadSrc: "", autoloadDst: "", allowedParentOrigins: [] }));
+    : (() => ({
+      embedMode: false,
+      embedLayout: "serial",
+      autostart: false,
+      autoloadSrc: "",
+      autoloadDst: "",
+      autoloadMode: "stage",
+      allowedParentOrigins: []
+    }));
   const parseBooleanFlag = typeof embedCommon.parseBooleanFlag === "function"
     ? embedCommon.parseBooleanFlag
     : ((value, fallback) => {
@@ -53,13 +61,25 @@
   const validateCommandEnvelope = typeof embedCommon.validateCommandEnvelope === "function"
     ? embedCommon.validateCommandEnvelope
     : ((message) => {
-      if (!message || typeof message !== "object" || message.type !== "tb.command") {
+      if (!message || typeof message !== "object") {
+        throw new Error("invalid command envelope");
+      }
+      if (message.source === "host" && message.type === "command") {
+        return {
+          id: String(message.id || ""),
+          command: String(message.cmd || ""),
+          payload: message.payload && typeof message.payload === "object" ? message.payload : {},
+          protocol: "host-v1"
+        };
+      }
+      if (message.type !== "tb.command") {
         throw new Error("invalid command envelope");
       }
       return {
         id: String(message.id || ""),
         command: String(message.command || ""),
-        payload: message.payload && typeof message.payload === "object" ? message.payload : {}
+        payload: message.payload && typeof message.payload === "object" ? message.payload : {},
+        protocol: "tb-v1"
       };
     });
   const sanitizeRootPath = typeof embedCommon.sanitizeRootPath === "function"
@@ -89,7 +109,7 @@
   const API_VERSION = typeof embedCommon.API_VERSION === "string" ? embedCommon.API_VERSION : "1.0";
   const API_CAPABILITIES = Array.isArray(embedCommon.CAPABILITIES)
     ? embedCommon.CAPABILITIES.slice()
-    : ["start", "stop", "inject", "list_root", "download"];
+    : ["start", "stop", "inject", "list_root", "read_root", "download_root", "download"];
 
   const pageTitleEl = resolveMountElement(rootEl, elements.pageTitle, "page-title");
   const screenContainerEl = resolveMountElement(rootEl, elements.screenContainer, "screen_container");
@@ -104,7 +124,10 @@
     locationOrigin: global.location ? global.location.origin : ""
   });
   const embedMode = options.embedMode === true || embedConfig.embedMode === true;
-  const serialEnabled = config.enableSerial === true;
+  const embedLayout = embedMode ? (embedConfig.embedLayout || "serial") : "serial";
+  const embedNeedsSerial = embedMode && (embedLayout === "serial" || embedLayout === "both");
+  const embedNeedsVga = embedMode && (embedLayout === "vga" || embedLayout === "both");
+  const serialEnabled = config.enableSerial === true || embedNeedsSerial;
   const sameOriginOnlyAutoload = parseBooleanFlag(config.autoloadAllowCrossOrigin, false) !== true;
   const autoloadTimeoutMs = Number.parseInt(String(config.autoloadTimeoutMs || "30000"), 10) || 30000;
   const startupTimeoutMs = Number.parseInt(String(config.startupTimeoutMs || "30000"), 10) || 30000;
@@ -133,7 +156,7 @@
     }
     return null;
   })();
-  const vgaEnabled = config.enableVga === true || (config.enableVga !== false && !serialEnabled);
+  const vgaEnabled = embedNeedsVga || config.enableVga === true || (config.enableVga !== false && !serialEnabled);
   const mouseEnabled = config.enableMouse === true;
   const cdromEnabled = config.enableCdrom === true;
   const rootExchangeEnabled = config.enableRootExchange !== false;
@@ -180,6 +203,7 @@
   let sawDownloadProgress = false;
   let diskStateReady = Promise.resolve();
   let bootImports = [];
+  let queuedRuntimeImports = [];
   let bootImportInFlight = false;
   let rootWatchTimer = null;
   let rootWatchPending = false;
@@ -270,68 +294,114 @@
     parentMessageChannels.push({ target: targetWindow, origin });
   }
 
-  function postEnvelopeToParent(envelope, target, origin) {
+  function postEnvelopeToParent(envelope, target, origin, transferList) {
     if (!target || typeof target.postMessage !== "function" || typeof origin !== "string" || !origin) {
       return;
     }
+    const transfers = Array.isArray(transferList) ? transferList.filter(Boolean) : [];
     try {
-      target.postMessage(envelope, origin);
+      if (transfers.length > 0) {
+        target.postMessage(envelope, origin, transfers);
+      } else {
+        target.postMessage(envelope, origin);
+      }
     } catch (err) {
       console.warn("postMessage send failed", err);
     }
   }
 
-  function emitApiEvent(eventName, payload = {}) {
+  function emitApiEvent(eventName, payload = {}, options = {}) {
     if (!postMessageEnabled || !global.parent || global.parent === global) {
       return;
     }
-    const envelope = {
+    const eventId = options && options.id !== undefined && options.id !== null
+      ? String(options.id)
+      : "";
+    const modernEnvelope = {
+      source: "triagebox",
+      type: "event",
+      event: eventName,
+      payload
+    };
+    if (eventId) {
+      modernEnvelope.id = eventId;
+    }
+    const legacyEnvelope = {
       type: "tb.event",
       event: eventName,
       payload
     };
+    if (eventId) {
+      legacyEnvelope.id = eventId;
+    }
 
     let sent = false;
     for (const channel of parentMessageChannels) {
-      postEnvelopeToParent(envelope, channel.target, channel.origin);
+      postEnvelopeToParent(modernEnvelope, channel.target, channel.origin);
+      postEnvelopeToParent(legacyEnvelope, channel.target, channel.origin);
       sent = true;
     }
 
     if (!sent && defaultEventTargetOrigin) {
-      postEnvelopeToParent(envelope, global.parent, defaultEventTargetOrigin);
+      postEnvelopeToParent(modernEnvelope, global.parent, defaultEventTargetOrigin);
+      postEnvelopeToParent(legacyEnvelope, global.parent, defaultEventTargetOrigin);
     }
   }
 
-  function sendApiResponse(targetWindow, origin, id, ok, payload, errorPayload) {
+  function sendApiResponse(targetWindow, origin, id, ok, payload, errorPayload, options = {}) {
     if (!postMessageEnabled || !targetWindow || typeof targetWindow.postMessage !== "function") {
       return;
     }
-    const response = {
+    const transferList = Array.isArray(options.transferList) ? options.transferList.filter(Boolean) : [];
+    const modernResponse = {
+      source: "triagebox",
+      type: "response",
+      id: String(id || ""),
+      ok: !!ok
+    };
+    if (ok) {
+      modernResponse.payload = payload && typeof payload === "object" ? payload : {};
+    } else {
+      const errObj = errorPayload && typeof errorPayload === "object" ? errorPayload : { code: "UNKNOWN_ERROR", message: "command failed" };
+      modernResponse.error = errObj.message || "command failed";
+      modernResponse.payload = errObj;
+    }
+    postEnvelopeToParent(modernResponse, targetWindow, origin, transferList);
+
+    const sendLegacy = options.legacy === true || (options.legacy !== false && transferList.length === 0);
+    if (!sendLegacy) {
+      return;
+    }
+
+    const legacyResponse = {
       type: "tb.response",
       id: String(id || ""),
       ok: !!ok
     };
     if (ok) {
-      response.payload = payload && typeof payload === "object" ? payload : {};
+      legacyResponse.payload = (options.legacyPayload && typeof options.legacyPayload === "object")
+        ? options.legacyPayload
+        : (payload && typeof payload === "object" ? payload : {});
     } else {
       const errObj = errorPayload && typeof errorPayload === "object" ? errorPayload : { code: "UNKNOWN_ERROR", message: "command failed" };
-      response.error = errObj.message || "command failed";
-      response.payload = errObj;
+      legacyResponse.error = errObj.message || "command failed";
+      legacyResponse.payload = errObj;
     }
-    postEnvelopeToParent(response, targetWindow, origin);
+    postEnvelopeToParent(legacyResponse, targetWindow, origin);
   }
 
-  function emitApiError(error, context) {
+  function emitApiError(error, context, options = {}) {
     const errPayload = toApiErrorPayload(error, "UNKNOWN_ERROR");
     if (context && typeof context === "object") {
       errPayload.context = context;
     }
-    emitApiEvent("error", errPayload);
+    emitApiEvent("error", errPayload, options);
     return errPayload;
   }
 
   if (embedMode && document.body) {
     document.body.classList.add("embed-mode");
+    document.body.classList.add(`embed-layout-${embedLayout}`);
   }
 
   function parentDiskPath(path) {
@@ -658,6 +728,16 @@
     setDiskStatus("cleared staged one-shot boot imports");
   }
 
+  function upsertRuntimeImport(srcPath, targetPath, overwrite = true) {
+    const existingIndex = queuedRuntimeImports.findIndex((entry) => entry.targetPath === targetPath);
+    const item = { srcPath, targetPath, overwrite: overwrite !== false };
+    if (existingIndex >= 0) {
+      queuedRuntimeImports[existingIndex] = item;
+    } else {
+      queuedRuntimeImports.push(item);
+    }
+  }
+
   async function stageImportIntoRunningVm(srcPath, targetPath, options = {}) {
     const { sourceBytes, resolvedSource } = await fetchServerSourceBytes(srcPath, options);
     const overwrite = options.overwrite !== false;
@@ -678,7 +758,13 @@
     bootImportInFlight = true;
     try {
       for (const entry of bootImports) {
-        await stageImportIntoRunningVm(entry.srcPath, entry.targetPath);
+        const result = await stageImportIntoRunningVm(entry.srcPath, entry.targetPath);
+        emitApiEvent("inject_ok", {
+          src: result.resolvedSource || entry.srcPath,
+          dst: entry.targetPath,
+          bytes: result.size,
+          mode: "stage",
+        });
       }
       if (source === "boot" || source === "boot-prestart") {
         const applied = bootImports.length;
@@ -690,10 +776,39 @@
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`runtime import failed (${msg})`);
+      emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"));
       console.error(err);
     } finally {
       bootImportInFlight = false;
     }
+  }
+
+  async function applyQueuedRuntimeImports(source = "queued-runtime") {
+    if (queuedRuntimeImports.length === 0 || !hasRunningVm()) {
+      return;
+    }
+    const pending = queuedRuntimeImports.slice();
+    queuedRuntimeImports = [];
+    for (const entry of pending) {
+      try {
+        const result = await stageImportIntoRunningVm(entry.srcPath, entry.targetPath, {
+          overwrite: entry.overwrite !== false
+        });
+        emitApiEvent("inject_ok", {
+          src: result.resolvedSource || entry.srcPath,
+          dst: entry.targetPath,
+          bytes: result.size,
+          mode: "runtime",
+          source
+        });
+      } catch (err) {
+        emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"));
+        emitApiError(err, { action: "inject_runtime_queue", src: entry.srcPath, dst: entry.targetPath });
+      }
+    }
+    window.setTimeout(() => {
+      requestRootWatchScan("inject", true);
+    }, 200);
   }
 
   function basename(path) {
@@ -1061,6 +1176,15 @@
     });
   }
 
+  function toResponseEnvelope(payload = {}, options = {}) {
+    return {
+      payload: payload && typeof payload === "object" ? payload : {},
+      transferList: Array.isArray(options.transferList) ? options.transferList : [],
+      legacy: options.legacy,
+      legacyPayload: options.legacyPayload,
+    };
+  }
+
   function sendSerialBytes(bytes) {
     if (!serialEnabled || !bytes || bytes.length === 0) {
       return false;
@@ -1258,7 +1382,9 @@
       sha256: null,
       kind: "file"
     };
-    emitApiEvent("download_done", payload);
+    if (options.emitEvent !== false) {
+      emitApiEvent("download_done", payload, { id: options.eventId });
+    }
     if (options.triggerBrowserDownload === true) {
       triggerBrowserDownloadUrl(zipResult.downloadUrl, zipResult.outName);
     }
@@ -1398,6 +1524,7 @@
     emulator.add_listener("emulator-ready", () => {
       applyRootShareTotalSize();
       setStatus("ready");
+      emitApiEvent("vm_ready", {});
       completeDownloadMeter();
       setupSerialResizeHandling();
       if (serialEnabled && serialUseXterm) {
@@ -1466,6 +1593,7 @@
       window.setTimeout(() => {
         requestRootWatchScan("vm_started", true);
       }, 1500);
+      void applyQueuedRuntimeImports("vm_started");
     });
 
     emulator.add_listener("emulator-stopped", () => {
@@ -1532,13 +1660,11 @@
   }
 
   async function injectIntoRoot(payload = {}, options = {}) {
+    const mode = (() => {
+      const rawMode = String(options.mode || payload.mode || "runtime").trim().toLowerCase();
+      return rawMode === "stage" ? "stage" : "runtime";
+    })();
     try {
-      if (!hasRunningVm()) {
-        throw Object.assign(new Error("VM not running"), { code: "VM_NOT_RUNNING" });
-      }
-      if (!hasFilesystemBridge()) {
-        throw Object.assign(new Error("filesystem bridge not ready"), { code: "FS_BRIDGE_NOT_READY" });
-      }
       const src = normalizeServerSourcePath(payload.src || "", {
         allowCrossOrigin: options.allowCrossOrigin === true ? true : false
       });
@@ -1548,63 +1674,163 @@
         ? sanitizeAutoloadDst(requestedDst || `/root/${sourceName}`)
         : sanitizeRootPath(requestedDst || `/root/${sourceName}`);
       const overwrite = payload.overwrite !== false;
+
+      if (mode === "stage") {
+        upsertBootImport(src, dst);
+        const staged = {
+          src,
+          dst,
+          overwrite,
+          mode: "stage",
+          queued: true,
+          pending_boot_imports: bootImports.length
+        };
+        if (options.emitEvent === true) {
+          emitApiEvent("inject_ok", staged, { id: options.eventId });
+        }
+        return staged;
+      }
+
+      if (!hasRunningVm()) {
+        throw Object.assign(new Error("VM not running"), { code: "VM_NOT_RUNNING" });
+      }
+      if (!hasFilesystemBridge()) {
+        throw Object.assign(new Error("filesystem bridge not ready"), { code: "FS_BRIDGE_NOT_READY" });
+      }
       const result = await stageImportIntoRunningVm(src, dst, { overwrite });
       const out = {
         src: result.resolvedSource || src,
         dst,
         bytes: result.size,
-        overwrite
+        overwrite,
+        mode: "runtime"
       };
-      emitApiEvent("inject_ok", out);
+      if (options.emitEvent !== false) {
+        emitApiEvent("inject_ok", out, { id: options.eventId });
+      }
       window.setTimeout(() => {
         requestRootWatchScan("inject", true);
       }, 200);
       return out;
     } catch (err) {
-      emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"));
+      emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"), { id: options.eventId });
       throw err;
     }
   }
 
   async function runAutoloadFromQuery() {
     const hasAutoloadSrc = typeof embedConfig.autoloadSrc === "string" && embedConfig.autoloadSrc.length > 0;
-    if (!hasAutoloadSrc) {
+    const hasAutoloadDst = typeof embedConfig.autoloadDst === "string" && embedConfig.autoloadDst.length > 0;
+    if (!hasAutoloadSrc && !hasAutoloadDst) {
       return;
     }
     try {
+      if (!hasAutoloadSrc || !hasAutoloadDst) {
+        throw Object.assign(new Error("autoload_src and autoload_dst must both be provided"), { code: "AUTOLOAD_ARGS_INVALID" });
+      }
+      const mode = String(embedConfig.autoloadMode || "stage").trim().toLowerCase() === "runtime" ? "runtime" : "stage";
       const src = normalizeServerSourcePath(embedConfig.autoloadSrc, { allowCrossOrigin: false });
       const dst = sanitizeAutoloadDst(embedConfig.autoloadDst || `/root/${basename(src)}`);
-      if (embedConfig.autostart) {
-        await startVm({ waitForRunning: true, timeoutMs: autoloadTimeoutMs });
+
+      if (mode === "stage") {
+        await injectIntoRoot(
+          { src, dst, overwrite: true, mode: "stage" },
+          { autoloadMode: true, allowCrossOrigin: false, emitEvent: false }
+        );
+        if (embedConfig.autostart) {
+          await startVm({ waitForRunning: true, timeoutMs: autoloadTimeoutMs });
+        } else {
+          setStatus("idle (staged one-shot boot import queued)");
+          setDiskStatus("autoload staged for next VM boot");
+        }
       } else {
-        await waitForVmRunning(autoloadTimeoutMs);
+        if (embedConfig.autostart) {
+          await startVm({ waitForRunning: true, timeoutMs: autoloadTimeoutMs });
+          await injectIntoRoot(
+            { src, dst, overwrite: true, mode: "runtime" },
+            { autoloadMode: true, allowCrossOrigin: false }
+          );
+        } else {
+          upsertRuntimeImport(src, dst, true);
+          setStatus("idle (runtime import queued for next VM start)");
+          setDiskStatus("autoload runtime import queued for next VM start");
+        }
       }
-      await injectIntoRoot({ src, dst, overwrite: true }, { autoloadMode: true, allowCrossOrigin: false });
     } catch (err) {
       const payload = emitApiError(err, { action: "autoload" });
       setStatus(`error (${payload.message})`);
     }
   }
 
-  async function handleApiCommand(command, payload) {
-    switch (command) {
+  async function handleApiCommand(command, payload, options = {}) {
+    const normalizedCommand = String(command || "").trim().toLowerCase();
+    switch (normalizedCommand) {
       case "start":
         await startVm({ waitForRunning: true, timeoutMs: startupTimeoutMs });
-        return {};
+        return toResponseEnvelope({});
       case "stop":
         await stopVm();
-        return {};
-      case "inject":
-        return await injectIntoRoot(payload || {}, { allowCrossOrigin: false });
+        return toResponseEnvelope({});
+      case "inject": {
+        const result = await injectIntoRoot(payload || {}, {
+          allowCrossOrigin: false,
+          eventId: options.commandId
+        });
+        return toResponseEnvelope(result);
+      }
       case "list_root": {
         const files = hasRunningVm() ? listRootShareRecords() : [];
         emitRootFilesChanged(files, "list_root", true);
-        return { files };
+        return toResponseEnvelope({ files });
+      }
+      case "read_root": {
+        try {
+          const path = payload && payload.path ? payload.path : "";
+          const result = await readRootShareFile(path);
+          const outBuffer = result.bytes.buffer.slice(result.bytes.byteOffset, result.bytes.byteOffset + result.bytes.byteLength);
+          emitApiEvent("read_root_ok", {
+            path: result.normalizedPath,
+            name: result.name,
+            size: result.bytes.byteLength
+          }, { id: options.commandId });
+          return toResponseEnvelope({
+            path: result.normalizedPath,
+            name: result.name,
+            size: result.bytes.byteLength,
+            kind: "file",
+            sha256: null,
+            bytes: outBuffer
+          }, { transferList: [outBuffer], legacy: false });
+        } catch (err) {
+          emitApiEvent("read_root_error", toApiErrorPayload(err, "READ_ROOT_FAILED"), { id: options.commandId });
+          throw err;
+        }
       }
       case "download": {
         const path = payload && payload.path ? payload.path : "";
-        const result = await downloadRootShareFile(path, { triggerBrowserDownload: false });
-        return result;
+        try {
+          const result = await downloadRootShareFile(path, {
+            triggerBrowserDownload: false,
+            eventId: options.commandId
+          });
+          return toResponseEnvelope(result);
+        } catch (err) {
+          emitApiEvent("download_error", toApiErrorPayload(err, "DOWNLOAD_FAILED"), { id: options.commandId });
+          throw err;
+        }
+      }
+      case "download_root": {
+        const path = payload && payload.path ? payload.path : "";
+        try {
+          const result = await downloadRootShareFile(path, {
+            triggerBrowserDownload: false,
+            eventId: options.commandId
+          });
+          return toResponseEnvelope(result);
+        } catch (err) {
+          emitApiEvent("download_error", toApiErrorPayload(err, "DOWNLOAD_FAILED"), { id: options.commandId });
+          throw err;
+        }
       }
       default:
         throw Object.assign(new Error(`unsupported command: ${command}`), { code: "COMMAND_UNSUPPORTED" });
@@ -1615,6 +1841,15 @@
     if (!postMessageEnabled) {
       return;
     }
+    if (!event || !event.source) {
+      return;
+    }
+    if (!isAllowedOrigin(event.origin, allowedParentOrigins)) {
+      return;
+    }
+    defaultEventTargetOrigin = event.origin;
+    rememberParentChannel(event.source, event.origin);
+
     let envelope;
     try {
       envelope = validateCommandEnvelope(event.data);
@@ -1628,25 +1863,22 @@
       emitApiEvent("error", payload);
       return;
     }
-    if (!isAllowedOrigin(event.origin, allowedParentOrigins)) {
-      const denied = toApiErrorPayload(
-        Object.assign(new Error("origin is not allowed"), { code: "ORIGIN_DENIED", details: { origin: event.origin } }),
-        "ORIGIN_DENIED"
-      );
-      sendApiResponse(event.source, event.origin, envelope.id, false, null, denied);
-      emitApiEvent("error", denied);
-      return;
-    }
-    defaultEventTargetOrigin = event.origin;
-    rememberParentChannel(event.source, event.origin);
+
     void (async () => {
       try {
-        const result = await handleApiCommand(envelope.command, envelope.payload);
-        sendApiResponse(event.source, event.origin, envelope.id, true, result, null);
+        const result = await handleApiCommand(envelope.command, envelope.payload, {
+          commandId: envelope.id,
+          protocol: envelope.protocol
+        });
+        sendApiResponse(event.source, event.origin, envelope.id, true, result.payload, null, {
+          transferList: result.transferList,
+          legacy: result.legacy,
+          legacyPayload: result.legacyPayload
+        });
       } catch (err) {
         const errPayload = toApiErrorPayload(err, "COMMAND_FAILED");
         sendApiResponse(event.source, event.origin, envelope.id, false, null, errPayload);
-        emitApiEvent("error", errPayload);
+        emitApiEvent("error", errPayload, { id: envelope.id });
       }
     })();
   }
@@ -1701,7 +1933,7 @@
 
   if (!serialEnabled && serialPanelEl) {
     serialPanelEl.style.display = "none";
-    if (embedMode) {
+    if (embedNeedsSerial) {
       const err = Object.assign(new Error("embed mode requires serial console"), { code: "EMBED_SERIAL_REQUIRED" });
       emitApiError(err, { action: "embed_init" });
     }
@@ -1716,6 +1948,14 @@
   }
   if (vgaPanelEl && !vgaEnabled) {
     vgaPanelEl.style.display = "none";
+  }
+  if (embedMode) {
+    if (serialPanelEl && embedLayout === "vga") {
+      serialPanelEl.style.display = "none";
+    }
+    if (vgaPanelEl && embedLayout === "serial") {
+      vgaPanelEl.style.display = "none";
+    }
   }
 
   if (diskPanelEl) {
@@ -1735,7 +1975,7 @@
     capabilities: API_CAPABILITIES.slice()
   });
 
-  if (embedConfig.autoloadSrc) {
+  if (embedConfig.autoloadSrc || embedConfig.autoloadDst) {
     void runAutoloadFromQuery();
   } else if (embedConfig.autostart) {
     void startVm({ waitForRunning: true, timeoutMs: startupTimeoutMs }).catch((err) => {
@@ -1746,6 +1986,7 @@
   return {
     config,
     embedMode,
+    embedLayout,
     apiVersion: API_VERSION,
     capabilities: API_CAPABILITIES.slice(),
     elements: {
@@ -1777,10 +2018,39 @@
     start: startVm,
     stop: stopVm,
     inject: injectIntoRoot,
+    async listRootFiles() {
+      const result = await handleApiCommand("list_root", {}, {});
+      return Array.isArray(result.payload.files) ? result.payload.files : [];
+    },
+    async readRootFile(path) {
+      const result = await handleApiCommand("read_root", { path }, {});
+      const bytes = result.payload && result.payload.bytes;
+      if (bytes instanceof Uint8Array) {
+        return bytes;
+      }
+      if (bytes instanceof ArrayBuffer) {
+        return new Uint8Array(bytes);
+      }
+      if (ArrayBuffer.isView(bytes) && bytes.buffer instanceof ArrayBuffer) {
+        return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      }
+      return new Uint8Array(0);
+    },
+    async downloadRootFile(path) {
+      const result = await handleApiCommand("download_root", { path }, {});
+      return result.payload;
+    },
+    // Backward-compatible aliases.
     listRoot() {
       return hasRunningVm() ? listRootShareRecords() : [];
     },
-    download: downloadRootShareFile,
+    async download(payloadOrPath) {
+      const path = typeof payloadOrPath === "string"
+        ? payloadOrPath
+        : (payloadOrPath && typeof payloadOrPath.path === "string" ? payloadOrPath.path : "");
+      const result = await handleApiCommand("download_root", { path }, {});
+      return result.payload;
+    },
     ensureEmulator,
     getEmulator() {
       return emulator;

@@ -10,8 +10,9 @@
   <body>
     <main>
       <h1 id="page-title">TriageBox Linux v86 Test Rig</h1>
+      <div id="embed-status-bar" class="embed-status-bar" aria-live="polite"></div>
 
-      <section class="panel">
+      <section class="panel" id="status-panel">
         <div class="controls">
           <button id="start">Start</button>
           <button id="stop">Stop</button>
@@ -22,7 +23,7 @@
 
       <section class="panel" id="disk-panel">
         <h2>Root Exchange</h2>
-        <p>Stage non-persistent boot imports from server files into the running VM (disk image is not modified).</p>
+        <p class="root-exchange-text">Stage non-persistent boot imports from server files into the running VM (disk image is not modified).</p>
         <div class="controls">
           <input id="inject-server-src" type="text" placeholder="assets/sample.bin">
           <input id="inject-disk-path" type="text" placeholder="/root/from-server.bin">
@@ -39,7 +40,6 @@
           <h2>Serial Console</h2>
         </div>
         <p id="serial-hint">Click inside the serial console and type to interact with the guest shell.</p>
-        <div id="embed-status-bar" class="embed-status-bar" aria-live="polite"></div>
         <div id="serial-xterm-wrap">
           <div id="serial-xterm"></div>
         </div>
