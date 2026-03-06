@@ -421,6 +421,7 @@ Official iframe embed mode:
   - `autoload_mode=stage|runtime` (default `stage`)
   - `parent_origin=https://your-host.example` (or `parent_origins=a,b`)
 - In embed mode, UI is viewport-first with `embed_layout` deciding serial/VGA/both.
+- Local demo harness for host integration is available at `public/embed-harness.html` (open `/embed-harness.html` while running `make serve`).
 
 PostMessage API (version `1.0`):
 
