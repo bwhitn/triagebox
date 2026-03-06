@@ -1,5 +1,5 @@
 From 1d5e944d7af4272f0e7d4207f8f99b4f95f07d8d Mon Sep 17 00:00:00 2001
-From: Nixbrowser Buildroot Maintainer <maintainer@example.com>
+From: TriageBox Buildroot Maintainer <maintainer@example.com>
 Date: Mon, 23 Feb 2026 00:00:00 +0000
 Subject: [PATCH] Cargo.toml: relax rust-version for Buildroot host toolchain
 

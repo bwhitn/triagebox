@@ -21,7 +21,7 @@ This repository provides a minimal Buildroot-based v86 setup with:
 - `scripts/write-build-config.sh`: writes build-time UI flags
 - `scripts/fetch-v86-assets.sh`: fetches `libv86.js`, `v86.wasm`, SeaBIOS, and xterm assets (VGA BIOS optional)
 - `scripts/build-v86-min-assets.sh`: builds v86 assets from source into `public/assets/v86-min/`
-- `scripts/package-release.sh`: builds a release bundle and writes `dist/nixbrowser-vX.Y.Z.tar.gz`
+- `scripts/package-release.sh`: builds a release bundle and writes `dist/triagebox-vX.Y.Z.tar.gz`
 - `scripts/set-version.sh`: updates the project release version stored in `VERSION`
 - `public/`: static UI to run the VM
 - `Dockerfile` + `compose.yaml`: serve UI from a Debian Trixie slim container
@@ -130,8 +130,8 @@ make release-package
 
 This writes:
 
-- `dist/nixbrowser-vX.Y.Z.tar.gz`
-- `dist/nixbrowser-vX.Y.Z.tar.gz.sha256`
+- `dist/triagebox-vX.Y.Z.tar.gz`
+- `dist/triagebox-vX.Y.Z.tar.gz.sha256`
 
 The release bundle contains the repository contents plus built artifacts, with
 `.work/`, `.git/`, and other local-only directories excluded.
@@ -145,7 +145,7 @@ The workflow:
 1. Verifies that `VERSION` matches the pushed tag
 2. Builds the stock v86 assets and Buildroot artifacts
 3. Builds the source-based `v86-min` assets
-4. Packages the release as `dist/nixbrowser-vX.Y.Z.tar.gz`
+4. Packages the release as `dist/triagebox-vX.Y.Z.tar.gz`
 5. Publishes the tarball and its `.sha256` file to the GitHub release
 
 ## Build knobs

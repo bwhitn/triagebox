@@ -13,7 +13,7 @@ GENERATED_OVERLAY_DIR="${WORK_DIR}/overlay-generated"
 BR2_EXTERNAL_DIR="${ROOT_DIR}/buildroot-external"
 BUSYBOX_NO_DHCP_FRAGMENT="${ROOT_DIR}/buildroot/busybox-no-dhcp.fragment"
 KERNEL_DRIVER_TRIM_FRAGMENT="${ROOT_DIR}/buildroot/linux-v86-trim.fragment"
-HOST_TOOLCHAIN_VERSION_MARKER="${OUT_DIR}/.nixbrowser-host-toolchain-buildroot-version"
+HOST_TOOLCHAIN_VERSION_MARKER="${OUT_DIR}/.triagebox-host-toolchain-buildroot-version"
 VERSION_FILE="${ROOT_DIR}/VERSION"
 
 PROJECT_VERSION="0.0.0"
@@ -106,13 +106,13 @@ motd_path = Path(sys.argv[1])
 text = motd_path.read_text(encoding="utf-8")
 replacements = {
     "{PROJECT_VERSION}": os.environ["PROJECT_VERSION_RENDER"],
-    "{NIXBROWSER_VERSION}": os.environ["PROJECT_VERSION_RENDER"],
+    "{TRIAGEBOX_VERSION}": os.environ["PROJECT_VERSION_RENDER"],
     "@PROJECT_VERSION@": os.environ["PROJECT_VERSION_RENDER"],
-    "@NIXBROWSER_VERSION@": os.environ["PROJECT_VERSION_RENDER"],
+    "@TRIAGEBOX_VERSION@": os.environ["PROJECT_VERSION_RENDER"],
     "{{PROJECT_VERSION}}": os.environ["PROJECT_VERSION_RENDER"],
-    "{{NIXBROWSER_VERSION}}": os.environ["PROJECT_VERSION_RENDER"],
+    "{{TRIAGEBOX_VERSION}}": os.environ["PROJECT_VERSION_RENDER"],
     "__PROJECT_VERSION__": os.environ["PROJECT_VERSION_RENDER"],
-    "__NIXBROWSER_VERSION__": os.environ["PROJECT_VERSION_RENDER"],
+    "__TRIAGEBOX_VERSION__": os.environ["PROJECT_VERSION_RENDER"],
     "{LINUX_VERSION}": os.environ["LINUX_VERSION_RENDER"],
     "@LINUX_VERSION@": os.environ["LINUX_VERSION_RENDER"],
     "{{LINUX_VERSION}}": os.environ["LINUX_VERSION_RENDER"],
@@ -444,7 +444,7 @@ fi
 # host configure. Ensure the required host math libs are pulled in before
 # host-binutils configures.
 if [[ -f "${BUILDROOT_SRC}/package/binutils/binutils.mk" ]] && \
-    ! grep -q '^# NIXBROWSER_LTO_HOST_ISL_FIX$' "${BUILDROOT_SRC}/package/binutils/binutils.mk"; then
+    ! grep -q '^# TRIAGEBOX_LTO_HOST_ISL_FIX$' "${BUILDROOT_SRC}/package/binutils/binutils.mk"; then
     echo "Applying local Buildroot fix: host-binutils LTO depends on host-isl and host-mpfr"
     binutils_mk_tmp="$(mktemp "${WORK_DIR}/binutils.mk.XXXXXX")"
     awk '
@@ -452,7 +452,7 @@ if [[ -f "${BUILDROOT_SRC}/package/binutils/binutils.mk" ]] && \
             print
             if ($0 == "HOST_BINUTILS_CONF_OPTS += --disable-gprofng") {
                 print ""
-                print "# NIXBROWSER_LTO_HOST_ISL_FIX"
+                print "# TRIAGEBOX_LTO_HOST_ISL_FIX"
                 print "ifeq ($(BR2_ENABLE_LTO),y)"
                 print "HOST_BINUTILS_DEPENDENCIES += host-mpfr"
                 print "HOST_BINUTILS_DEPENDENCIES += host-isl"

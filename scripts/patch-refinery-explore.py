@@ -9,7 +9,7 @@ def main() -> int:
     needle = "            header = '{e:-<4}[{}]{e:-<{w}}'.format(name, w=width - len(name) - 6, e='')"
     replacement = (
         "            padding = max(0, width - len(name) - 6)\n"
-        "            # __NIXBROWSER_EXPLORE_WIDTH_GUARD__\n"
+        "            # __TRIAGEBOX_EXPLORE_WIDTH_GUARD__\n"
         "            header = '{e:-<4}[{}]{e:-<{w}}'.format(name, w=padding, e='')"
     )
     if needle not in text:

@@ -367,15 +367,15 @@ def update_generated_menu(generated_packages: list[str]) -> None:
     GENERATED_MENU.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     for pkg in sorted(generated_packages):
-        lines.append(f'source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/{pkg}/Config.in"')
+        lines.append(f'source "$BR2_EXTERNAL_TRIAGEBOX_PATH/package/{pkg}/Config.in"')
     GENERATED_MENU.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
     root_text = ROOT_CONFIG_IN.read_text(encoding="utf-8")
-    include_line = 'source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/refinery-generated-deps/Config.in"'
+    include_line = 'source "$BR2_EXTERNAL_TRIAGEBOX_PATH/package/refinery-generated-deps/Config.in"'
     if include_line not in root_text:
         root_text = root_text.replace(
-            'source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-binary-refinery/Config.in"\n',
-            'source "$BR2_EXTERNAL_NIXBROWSER_PATH/package/python-binary-refinery/Config.in"\n'
+            'source "$BR2_EXTERNAL_TRIAGEBOX_PATH/package/python-binary-refinery/Config.in"\n',
+            'source "$BR2_EXTERNAL_TRIAGEBOX_PATH/package/python-binary-refinery/Config.in"\n'
             f"\t{include_line}\n",
         )
         ROOT_CONFIG_IN.write_text(root_text, encoding="utf-8")

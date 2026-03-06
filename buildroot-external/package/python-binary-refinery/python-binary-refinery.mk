@@ -22,7 +22,7 @@ PYTHON_BINARY_REFINERY_ENV = REFINERY_PREFIX=
 
 PYTHON_BINARY_REFINERY_PYTAG = cp$(subst .,,$(PYTHON3_VERSION_MAJOR))
 PYTHON_BINARY_REFINERY_REQUIREMENTS_FILE = \
-	$(BR2_EXTERNAL_NIXBROWSER_PATH)/package/python-binary-refinery/requirements-all.txt
+	$(BR2_EXTERNAL_TRIAGEBOX_PATH)/package/python-binary-refinery/requirements-all.txt
 PYTHON_BINARY_REFINERY_PREFETCHED_REQUIREMENTS_FILE = \
 	$(PYTHON_BINARY_REFINERY_WHEELHOUSE_DIR)/requirements-resolved.txt
 
@@ -50,24 +50,24 @@ PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_RELAX_SETUP_EX
 # "ValueError: invalid width 0". Patch terminalfit to guard COLUMNS/LINES.
 define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT
 	if [ -f $(@D)/refinery/lib/tools.py ] && \
-		! grep -q '__NIXBROWSER_TERMINALFIT_GUARD__' $(@D)/refinery/lib/tools.py; then \
+		! grep -q '__TRIAGEBOX_TERMINALFIT_GUARD__' $(@D)/refinery/lib/tools.py; then \
 		printf '\n%s\n' \
-			'# __NIXBROWSER_TERMINALFIT_GUARD__' \
+			'# __TRIAGEBOX_TERMINALFIT_GUARD__' \
 			'try:' \
-			'    _nixbrowser_terminalfit_original = terminalfit' \
+			'    _triagebox_terminalfit_original = terminalfit' \
 			'except NameError:' \
-			'    _nixbrowser_terminalfit_original = None' \
+			'    _triagebox_terminalfit_original = None' \
 			'' \
-			'if _nixbrowser_terminalfit_original is not None:' \
+			'if _triagebox_terminalfit_original is not None:' \
 			'    def terminalfit(*args, **kwargs):' \
-			'        import os as _nixbrowser_os' \
-			'        _nixbrowser_cols = _nixbrowser_os.environ.get("COLUMNS", "")' \
-			'        if not _nixbrowser_cols.isdigit() or int(_nixbrowser_cols) <= 0:' \
-			'            _nixbrowser_os.environ["COLUMNS"] = "120"' \
-			'        _nixbrowser_lines = _nixbrowser_os.environ.get("LINES", "")' \
-			'        if not _nixbrowser_lines.isdigit() or int(_nixbrowser_lines) <= 0:' \
-			'            _nixbrowser_os.environ["LINES"] = "40"' \
-			'        return _nixbrowser_terminalfit_original(*args, **kwargs)' \
+			'        import os as _triagebox_os' \
+			'        _triagebox_cols = _triagebox_os.environ.get("COLUMNS", "")' \
+			'        if not _triagebox_cols.isdigit() or int(_triagebox_cols) <= 0:' \
+			'            _triagebox_os.environ["COLUMNS"] = "120"' \
+			'        _triagebox_lines = _triagebox_os.environ.get("LINES", "")' \
+			'        if not _triagebox_lines.isdigit() or int(_triagebox_lines) <= 0:' \
+			'            _triagebox_os.environ["LINES"] = "40"' \
+			'        return _triagebox_terminalfit_original(*args, **kwargs)' \
 			>> $(@D)/refinery/lib/tools.py; \
 	fi
 endef
@@ -78,7 +78,7 @@ PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_PATCH_TERMINAL
 # here, so replace datapath() with a direct Path-based fast path.
 define PYTHON_BINARY_REFINERY_PATCH_RESOURCES_FASTPATH
 	resources_py="$(@D)/refinery/lib/resources.py"; \
-	if [ -f "$$resources_py" ] && ! grep -q '__NIXBROWSER_RESOURCES_FASTPATH__' "$$resources_py"; then \
+	if [ -f "$$resources_py" ] && ! grep -q '__TRIAGEBOX_RESOURCES_FASTPATH__' "$$resources_py"; then \
 		printf '%s\n' \
 			'"""A wrapper module to read local data resources."""' \
 			'from __future__ import annotations' \
@@ -89,7 +89,7 @@ define PYTHON_BINARY_REFINERY_PATCH_RESOURCES_FASTPATH
 			'' \
 			'' \
 			'def datapath(name: str):' \
-			'    # __NIXBROWSER_RESOURCES_FASTPATH__' \
+			'    # __TRIAGEBOX_RESOURCES_FASTPATH__' \
 			'    return _DATA_DIR / name' \
 			> "$$resources_py"; \
 	fi
@@ -99,34 +99,34 @@ PYTHON_BINARY_REFINERY_POST_PATCH_HOOKS += PYTHON_BINARY_REFINERY_PATCH_RESOURCE
 define PYTHON_BINARY_REFINERY_PATCH_TERMINALFIT_TARGET
 	tools_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/lib/tools.py"; \
 	if [ -f "$$tools_py" ] && \
-		! grep -q '__NIXBROWSER_TERMINALFIT_GUARD_V2__' "$$tools_py"; then \
+		! grep -q '__TRIAGEBOX_TERMINALFIT_GUARD_V2__' "$$tools_py"; then \
 		printf '\n%s\n' \
-			'# __NIXBROWSER_TERMINALFIT_GUARD_V2__' \
+			'# __TRIAGEBOX_TERMINALFIT_GUARD_V2__' \
 			'try:' \
-			'    _nixbrowser_terminalfit_original_v2 = terminalfit' \
+			'    _triagebox_terminalfit_original_v2 = terminalfit' \
 			'except NameError:' \
-			'    _nixbrowser_terminalfit_original_v2 = None' \
+			'    _triagebox_terminalfit_original_v2 = None' \
 			'' \
-			'if _nixbrowser_terminalfit_original_v2 is not None:' \
+			'if _triagebox_terminalfit_original_v2 is not None:' \
 			'    def terminalfit(*args, **kwargs):' \
-			'        import os as _nixbrowser_os' \
-			'        import shutil as _nixbrowser_shutil' \
-			'        _nixbrowser_size = _nixbrowser_shutil.get_terminal_size((120, 40))' \
-			'        _nixbrowser_cols = str(max(2, _nixbrowser_size.columns))' \
-			'        _nixbrowser_lines = str(max(2, _nixbrowser_size.lines))' \
-			'        _nixbrowser_colenv = _nixbrowser_os.environ.get("COLUMNS", "")' \
-			'        _nixbrowser_lineenv = _nixbrowser_os.environ.get("LINES", "")' \
-			'        if (not _nixbrowser_colenv.isdigit()) or int(_nixbrowser_colenv) <= 1:' \
-			'            _nixbrowser_os.environ["COLUMNS"] = _nixbrowser_cols' \
-			'        if (not _nixbrowser_lineenv.isdigit()) or int(_nixbrowser_lineenv) <= 1:' \
-			'            _nixbrowser_os.environ["LINES"] = _nixbrowser_lines' \
+			'        import os as _triagebox_os' \
+			'        import shutil as _triagebox_shutil' \
+			'        _triagebox_size = _triagebox_shutil.get_terminal_size((120, 40))' \
+			'        _triagebox_cols = str(max(2, _triagebox_size.columns))' \
+			'        _triagebox_lines = str(max(2, _triagebox_size.lines))' \
+			'        _triagebox_colenv = _triagebox_os.environ.get("COLUMNS", "")' \
+			'        _triagebox_lineenv = _triagebox_os.environ.get("LINES", "")' \
+			'        if (not _triagebox_colenv.isdigit()) or int(_triagebox_colenv) <= 1:' \
+			'            _triagebox_os.environ["COLUMNS"] = _triagebox_cols' \
+			'        if (not _triagebox_lineenv.isdigit()) or int(_triagebox_lineenv) <= 1:' \
+			'            _triagebox_os.environ["LINES"] = _triagebox_lines' \
 			'        if "width" in kwargs:' \
 			'            try:' \
 			'                if int(kwargs.get("width") or 0) <= 1:' \
-			'                    kwargs["width"] = int(_nixbrowser_os.environ["COLUMNS"])' \
+			'                    kwargs["width"] = int(_triagebox_os.environ["COLUMNS"])' \
 			'            except Exception:' \
-			'                kwargs["width"] = int(_nixbrowser_os.environ["COLUMNS"])' \
-			'        return _nixbrowser_terminalfit_original_v2(*args, **kwargs)' \
+			'                kwargs["width"] = int(_triagebox_os.environ["COLUMNS"])' \
+			'        return _triagebox_terminalfit_original_v2(*args, **kwargs)' \
 			>> "$$tools_py"; \
 	fi
 endef
@@ -138,12 +138,12 @@ PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH
 define PYTHON_BINARY_REFINERY_PATCH_LAZY_UNITS_TARGET
 	init_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/__init__.py"; \
 	tmp_py="$(@D)/.__refinery_init_lazy.tmp"; \
-	if [ -f "$$init_py" ] && ! grep -q '__NIXBROWSER_REFINERY_LAZY_CACHE__' "$$init_py"; then \
+	if [ -f "$$init_py" ] && ! grep -q '__TRIAGEBOX_REFINERY_LAZY_CACHE__' "$$init_py"; then \
 		awk ' \
 			/^        if cache is None:$$/ { \
 				print $$0; \
 				if (getline line > 0 && line ~ /^            self\\.reload\\(\\)$$/) { \
-					print "            # __NIXBROWSER_REFINERY_LAZY_CACHE__"; \
+					print "            # __TRIAGEBOX_REFINERY_LAZY_CACHE__"; \
 					print "            self.loaded = True"; \
 					print "            return"; \
 					next; \
@@ -160,8 +160,8 @@ PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH
 
 define PYTHON_BINARY_REFINERY_PATCH_EXPLORE_WIDTH_TARGET
 	explore_py="$(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/refinery/explore.py"; \
-	if [ -f "$$explore_py" ] && ! grep -q '__NIXBROWSER_EXPLORE_WIDTH_GUARD__' "$$explore_py"; then \
-		$(HOST_DIR)/bin/python3 $(BR2_EXTERNAL_NIXBROWSER_PATH)/../scripts/patch-refinery-explore.py "$$explore_py"; \
+	if [ -f "$$explore_py" ] && ! grep -q '__TRIAGEBOX_EXPLORE_WIDTH_GUARD__' "$$explore_py"; then \
+		$(HOST_DIR)/bin/python3 $(BR2_EXTERNAL_TRIAGEBOX_PATH)/../scripts/patch-refinery-explore.py "$$explore_py"; \
 	fi
 endef
 PYTHON_BINARY_REFINERY_POST_INSTALL_TARGET_HOOKS += PYTHON_BINARY_REFINERY_PATCH_EXPLORE_WIDTH_TARGET
