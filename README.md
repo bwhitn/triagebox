@@ -410,6 +410,63 @@ Notes:
 - For VGA mode, provide a `screenContainer` element that contains the v86 screen markup.
 - All element bindings are optional; if you omit `start`/`stop`, drive the VM with `app.start()` / `app.stop()`.
 
+Official iframe embed mode:
+
+- Load iframe as `/?embed=1`.
+- Optional query params:
+  - `autostart=1|0` (default `0`)
+  - `autoload_src=<url>` (http/https only; same-origin enforced by default)
+  - `autoload_dst=/root/<name>` (sanitized to basename under `/root/`)
+  - `parent_origin=https://your-host.example` (or `parent_origins=a,b`)
+- In embed mode, UI is terminal-first (full viewport) with minimal status and no standalone chrome panels.
+
+PostMessage API (version `1.0`):
+
+- Command envelope (parent -> iframe):
+
+```json
+{"type":"tb.command","id":"1","command":"start","payload":{}}
+```
+
+- Response envelope (iframe -> parent):
+
+```json
+{"type":"tb.response","id":"1","ok":true,"payload":{}}
+{"type":"tb.response","id":"1","ok":false,"error":"reason","payload":{"code":"CODE","message":"reason"}}
+```
+
+- Event envelope (iframe -> parent):
+
+```json
+{"type":"tb.event","event":"ready","payload":{"api_version":"1.0","capabilities":["start","stop","inject","list_root","download"]}}
+```
+
+- Commands:
+  - `start`
+  - `stop`
+  - `inject` payload: `{"src":"<url>","dst":"/root/file.bin","overwrite":true}`
+  - `list_root`
+  - `download` payload: `{"path":"/root/file.bin"}`
+
+- Events:
+  - `ready`
+  - `vm_started`
+  - `vm_stopped`
+  - `inject_ok`
+  - `inject_error`
+  - `root_files_changed`
+  - `download_done`
+  - `error`
+
+`root_files_changed`/`list_root` payload file record format:
+
+- `name`, `path`, `size`, `mtime_epoch`, `sha256` (nullable), `kind` (`file|dir`)
+
+Thin SDK:
+
+- `public/triagebox-embed-sdk.js` exposes `window.TriageBoxEmbed.create(iframeEl, { targetOrigin })`.
+- Methods: `start()`, `stop()`, `inject({src,dst,overwrite})`, `listRoot()`, `download({path})`, `on(event, cb)`.
+
 ## Notes
 
 - v86 exposes a single emulated CPU in this setup.

@@ -32,13 +32,86 @@
   const rootEl = options.rootEl && typeof options.rootEl === "object" ? options.rootEl : null;
   const elements = options.elements || {};
   const config = Object.assign({}, global.V86_VM_CONFIG || {}, global.V86_BUILD_CONFIG || {}, options.config || {});
+  const embedCommon = global.TriageBoxEmbedCommon || {};
+  const parseEmbedConfig = typeof embedCommon.parseEmbedConfig === "function"
+    ? embedCommon.parseEmbedConfig
+    : (() => ({ embedMode: false, autostart: false, autoloadSrc: "", autoloadDst: "", allowedParentOrigins: [] }));
+  const parseBooleanFlag = typeof embedCommon.parseBooleanFlag === "function"
+    ? embedCommon.parseBooleanFlag
+    : ((value, fallback) => {
+      if (value === undefined || value === null || String(value).trim() === "") {
+        return fallback;
+      }
+      return String(value).trim() === "1";
+    });
+  const toApiErrorPayload = typeof embedCommon.toApiErrorPayload === "function"
+    ? embedCommon.toApiErrorPayload
+    : ((error, code) => ({
+      code: code || "UNKNOWN_ERROR",
+      message: error && error.message ? error.message : String(error || "unknown error")
+    }));
+  const validateCommandEnvelope = typeof embedCommon.validateCommandEnvelope === "function"
+    ? embedCommon.validateCommandEnvelope
+    : ((message) => {
+      if (!message || typeof message !== "object" || message.type !== "tb.command") {
+        throw new Error("invalid command envelope");
+      }
+      return {
+        id: String(message.id || ""),
+        command: String(message.command || ""),
+        payload: message.payload && typeof message.payload === "object" ? message.payload : {}
+      };
+    });
+  const sanitizeRootPath = typeof embedCommon.sanitizeRootPath === "function"
+    ? embedCommon.sanitizeRootPath
+    : ((path) => {
+      const value = String(path || "").trim();
+      if (!value.startsWith("/root/")) {
+        throw new Error("path must be under /root");
+      }
+      return value;
+    });
+  const sanitizeAutoloadDst = typeof embedCommon.sanitizeAutoloadDst === "function"
+    ? embedCommon.sanitizeAutoloadDst
+    : ((dst) => `/root/${String(dst || "").split("/").filter(Boolean).pop() || "autoload.bin"}`);
+  const resolveAutoloadSource = typeof embedCommon.resolveAutoloadSource === "function"
+    ? embedCommon.resolveAutoloadSource
+    : ((src) => String(src || "").trim());
+  const isAllowedOrigin = typeof embedCommon.isAllowedOrigin === "function"
+    ? embedCommon.isAllowedOrigin
+    : ((origin, allowed) => Array.isArray(allowed) && allowed.includes(origin));
+  const normalizeRootRecordList = typeof embedCommon.normalizeRootRecordList === "function"
+    ? embedCommon.normalizeRootRecordList
+    : ((records) => Array.isArray(records) ? records : []);
+  const rootRecordListSignature = typeof embedCommon.rootRecordListSignature === "function"
+    ? embedCommon.rootRecordListSignature
+    : ((records) => JSON.stringify(records || []));
+  const API_VERSION = typeof embedCommon.API_VERSION === "string" ? embedCommon.API_VERSION : "1.0";
+  const API_CAPABILITIES = Array.isArray(embedCommon.CAPABILITIES)
+    ? embedCommon.CAPABILITIES.slice()
+    : ["start", "stop", "inject", "list_root", "download"];
+
   const pageTitleEl = resolveMountElement(rootEl, elements.pageTitle, "page-title");
   const screenContainerEl = resolveMountElement(rootEl, elements.screenContainer, "screen_container");
+  const embedStatusBarEl = resolveMountElement(rootEl, elements.embedStatusBar, "embed-status-bar");
   const PAGE_TITLE = typeof options.pageTitle === "string" && options.pageTitle.trim().length > 0
     ? options.pageTitle.trim()
     : "TriageBox Linux v86 Test Rig";
   const shouldApplyPageTitle = options.setDocumentTitle !== false;
+  const embedConfig = parseEmbedConfig(global.location ? global.location.search : "", {
+    configParentOrigins: config.parentOrigins || "",
+    referrer: document.referrer || "",
+    locationOrigin: global.location ? global.location.origin : ""
+  });
+  const embedMode = options.embedMode === true || embedConfig.embedMode === true;
   const serialEnabled = config.enableSerial === true;
+  const sameOriginOnlyAutoload = parseBooleanFlag(config.autoloadAllowCrossOrigin, false) !== true;
+  const autoloadTimeoutMs = Number.parseInt(String(config.autoloadTimeoutMs || "30000"), 10) || 30000;
+  const startupTimeoutMs = Number.parseInt(String(config.startupTimeoutMs || "30000"), 10) || 30000;
+  const postMessageEnabled = config.enablePostMessageApi !== false;
+  const allowedParentOrigins = Array.isArray(embedConfig.allowedParentOrigins)
+    ? embedConfig.allowedParentOrigins.slice()
+    : [];
   const xtermCtor = (() => {
     if (typeof global.Terminal === "function") {
       return global.Terminal;
@@ -113,11 +186,22 @@
   let rootWatchKnownNames = new Set();
   let rootWatchStatusHoldUntil = 0;
   let rootDownloadInFlight = false;
+  let lastRootRecordsSignature = "";
+  let lastRootRecords = [];
+  let vmStartedResolvers = [];
+  const parentMessageChannels = [];
+  let defaultEventTargetOrigin = allowedParentOrigins.length > 0
+    ? allowedParentOrigins[0]
+    : (global.location ? global.location.origin : "");
+  const issuedDownloadUrls = new Set();
   const ROOT_SHARE_TOTAL_BYTES = (() => {
     const raw = Number.parseInt(String(config.rootExchangeSizeMb ?? "1024"), 10);
     const mb = Number.isFinite(raw) ? Math.max(64, raw) : 1024;
     return mb * 1024 * 1024;
   })();
+
+  let currentStatusText = "idle";
+  let currentIpsText = "n/a";
   const MAX_RUNTIME_IMPORT_BYTES = 2 * 1024 * 1024;
   const ROOT_SHARE_PREFIX = "/root";
   const ROOT_WATCH_INTERVAL_MS = (() => {
@@ -138,14 +222,22 @@
   applyPageTitle();
 
   function setStatus(text) {
+    currentStatusText = text;
     if (statusEl) {
       statusEl.textContent = `status: ${text}`;
+    }
+    if (embedStatusBarEl) {
+      embedStatusBarEl.textContent = `status: ${currentStatusText} | ips: ${currentIpsText}`;
     }
   }
 
   function setIps(text) {
+    currentIpsText = text;
     if (ipsEl) {
       ipsEl.textContent = `instructions/sec: ${text}`;
+    }
+    if (embedStatusBarEl) {
+      embedStatusBarEl.textContent = `status: ${currentStatusText} | ips: ${currentIpsText}`;
     }
   }
 
@@ -165,6 +257,81 @@
 
   function rootWatchIntervalMs() {
     return ROOT_WATCH_INTERVAL_MS;
+  }
+
+  function rememberParentChannel(targetWindow, origin) {
+    if (!targetWindow || typeof origin !== "string" || !origin) {
+      return;
+    }
+    const existing = parentMessageChannels.find((entry) => entry.origin === origin && entry.target === targetWindow);
+    if (existing) {
+      return;
+    }
+    parentMessageChannels.push({ target: targetWindow, origin });
+  }
+
+  function postEnvelopeToParent(envelope, target, origin) {
+    if (!target || typeof target.postMessage !== "function" || typeof origin !== "string" || !origin) {
+      return;
+    }
+    try {
+      target.postMessage(envelope, origin);
+    } catch (err) {
+      console.warn("postMessage send failed", err);
+    }
+  }
+
+  function emitApiEvent(eventName, payload = {}) {
+    if (!postMessageEnabled || !global.parent || global.parent === global) {
+      return;
+    }
+    const envelope = {
+      type: "tb.event",
+      event: eventName,
+      payload
+    };
+
+    let sent = false;
+    for (const channel of parentMessageChannels) {
+      postEnvelopeToParent(envelope, channel.target, channel.origin);
+      sent = true;
+    }
+
+    if (!sent && defaultEventTargetOrigin) {
+      postEnvelopeToParent(envelope, global.parent, defaultEventTargetOrigin);
+    }
+  }
+
+  function sendApiResponse(targetWindow, origin, id, ok, payload, errorPayload) {
+    if (!postMessageEnabled || !targetWindow || typeof targetWindow.postMessage !== "function") {
+      return;
+    }
+    const response = {
+      type: "tb.response",
+      id: String(id || ""),
+      ok: !!ok
+    };
+    if (ok) {
+      response.payload = payload && typeof payload === "object" ? payload : {};
+    } else {
+      const errObj = errorPayload && typeof errorPayload === "object" ? errorPayload : { code: "UNKNOWN_ERROR", message: "command failed" };
+      response.error = errObj.message || "command failed";
+      response.payload = errObj;
+    }
+    postEnvelopeToParent(response, targetWindow, origin);
+  }
+
+  function emitApiError(error, context) {
+    const errPayload = toApiErrorPayload(error, "UNKNOWN_ERROR");
+    if (context && typeof context === "object") {
+      errPayload.context = context;
+    }
+    emitApiEvent("error", errPayload);
+    return errPayload;
+  }
+
+  if (embedMode && document.body) {
+    document.body.classList.add("embed-mode");
   }
 
   function parentDiskPath(path) {
@@ -292,18 +459,12 @@
     return `/${pieces.join("/")}`;
   }
 
-  function normalizeServerSourcePath(src) {
-    const value = String(src || "").trim();
-    if (!value) {
-      throw new Error("missing server source path");
-    }
-    if (/^https?:\/\//i.test(value)) {
-      throw new Error("server source must be a local path");
-    }
-    if (/[\x00\n\r]/.test(value)) {
-      throw new Error("invalid server source path");
-    }
-    return value.startsWith("/") ? value : `/${value}`;
+  function normalizeServerSourcePath(src, options = {}) {
+    return resolveAutoloadSource(src, {
+      baseUrl: global.location ? global.location.href : undefined,
+      baseOrigin: global.location ? global.location.origin : "",
+      allowCrossOrigin: options.allowCrossOrigin === true ? true : !sameOriginOnlyAutoload
+    });
   }
 
   function hasFilesystemBridge() {
@@ -362,13 +523,43 @@
     }
   }
 
-  function listRootShareRegularFiles() {
+  function inodeEpochSeconds(inode) {
+    const candidates = [
+      inode && inode.mtime,
+      inode && inode.ctime,
+      inode && inode.atime,
+      inode && inode.mtime_sec,
+      inode && inode.ctime_sec,
+      inode && inode.atime_sec
+    ];
+    for (const candidate of candidates) {
+      if (Number.isFinite(candidate)) {
+        if (candidate > 1e12) {
+          return Math.floor(candidate / 1000);
+        }
+        if (candidate >= 0) {
+          return Math.floor(candidate);
+        }
+      }
+    }
+    return 0;
+  }
+
+  function inodeKind(inode) {
+    const mode = Number.isFinite(inode && inode.mode) ? inode.mode : 0;
+    if ((mode & 0xF000) === 0x4000) {
+      return "dir";
+    }
+    return "file";
+  }
+
+  function listRootShareRecords() {
     const fs = emulator?.fs9p;
     if (!fs || typeof fs.read_dir !== "function" || typeof fs.SearchPath !== "function" || typeof fs.GetInode !== "function") {
       throw new Error("filesystem bridge unavailable");
     }
     const pending = [{ sharePath: "/", relativePath: "" }];
-    const files = [];
+    const records = [];
     while (pending.length > 0) {
       const node = pending.pop();
       const entries = fs.read_dir(node.sharePath) || [];
@@ -386,19 +577,36 @@
           continue;
         }
         const rel = node.relativePath ? `${node.relativePath}/${name}` : name;
-        if ((inode.mode & 0xF000) === 0x4000) {
+        const kind = inodeKind(inode);
+        records.push({
+          name,
+          path: `/root/${rel}`,
+          size: Number.isFinite(inode && inode.size) ? Math.max(0, Math.floor(inode.size)) : 0,
+          mtime_epoch: inodeEpochSeconds(inode),
+          sha256: null,
+          kind
+        });
+        if (kind === "dir") {
           pending.push({ sharePath, relativePath: rel });
-          continue;
         }
-        files.push(rel);
       }
     }
+    const normalized = normalizeRootRecordList(records);
+    return normalized;
+  }
+
+  function listRootShareRegularFiles() {
+    const records = listRootShareRecords();
+    const files = records
+      .filter((record) => record.kind === "file")
+      .map((record) => record.path.replace(/^\/root\//, ""));
     files.sort((a, b) => a.localeCompare(b));
     return files;
   }
 
-  async function fetchServerSourceBytes(srcPath) {
-    const sourceResp = await fetch(srcPath, { cache: "no-store" });
+  async function fetchServerSourceBytes(srcPath, options = {}) {
+    const resolvedSource = normalizeServerSourcePath(srcPath, options);
+    const sourceResp = await fetch(resolvedSource, { cache: "no-store", credentials: "same-origin" });
     if (!sourceResp.ok) {
       throw new Error(await readResponseError(sourceResp));
     }
@@ -409,10 +617,10 @@
     if (sourceBytes.byteLength > MAX_RUNTIME_IMPORT_BYTES) {
       throw new Error(`source file exceeds runtime limit (${formatBytes(MAX_RUNTIME_IMPORT_BYTES)})`);
     }
-    return sourceBytes;
+    return { sourceBytes, resolvedSource };
   }
 
-  async function writeBytesToVmRootShare(targetPath, bytes) {
+  async function writeBytesToVmRootShare(targetPath, bytes, overwrite = true) {
     if (!hasFilesystemBridge()) {
       throw new Error("filesystem bridge not ready");
     }
@@ -425,6 +633,9 @@
         const inode = fs.GetInode(existing.id);
         if (inode && (inode.mode & 0xF000) === 0x4000) {
           throw new Error("destination exists as directory");
+        }
+        if (!overwrite) {
+          throw Object.assign(new Error("destination file already exists"), { code: "DEST_EXISTS" });
         }
         fs.DeleteNode(sharePath);
       }
@@ -447,10 +658,11 @@
     setDiskStatus("cleared staged one-shot boot imports");
   }
 
-  async function stageImportIntoRunningVm(srcPath, targetPath) {
-    const sourceBytes = await fetchServerSourceBytes(srcPath);
-    await writeBytesToVmRootShare(targetPath, sourceBytes);
-    return sourceBytes.byteLength;
+  async function stageImportIntoRunningVm(srcPath, targetPath, options = {}) {
+    const { sourceBytes, resolvedSource } = await fetchServerSourceBytes(srcPath, options);
+    const overwrite = options.overwrite !== false;
+    await writeBytesToVmRootShare(targetPath, sourceBytes, overwrite);
+    return { size: sourceBytes.byteLength, resolvedSource };
   }
 
   async function applyBootImportsToVm(source = "manual") {
@@ -487,6 +699,15 @@
   function basename(path) {
     if (typeof path !== "string" || path.length === 0) {
       return "asset";
+    }
+    try {
+      const parsed = new URL(path, global.location ? global.location.href : undefined);
+      const urlParts = parsed.pathname.split("/").filter(Boolean);
+      if (urlParts.length > 0) {
+        return urlParts[urlParts.length - 1];
+      }
+    } catch (err) {
+      // treat as plain path
     }
     const parts = path.split("/").filter(Boolean);
     return parts.length > 0 ? parts[parts.length - 1] : path;
@@ -527,7 +748,8 @@
     try {
       srcPath = normalizeServerSourcePath(srcRaw);
       const sourceName = basename(srcPath) || "server-file.bin";
-      targetPath = normalizeGuestPath(injectDiskPathEl?.value || "", sourceName);
+      const requestedPath = (injectDiskPathEl?.value || "").trim();
+      targetPath = sanitizeRootPath(requestedPath || `/root/${sourceName}`);
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`invalid import request (${msg})`);
@@ -540,9 +762,14 @@
     setDiskStatus(`staging ${srcPath} -> ${targetPath} (one-shot, non-persistent)...`);
     try {
       if (hasRunningVm()) {
-        const size = await stageImportIntoRunningVm(srcPath, targetPath);
-        setDiskStatus(`imported to running VM (${formatBytes(size)}); current boot only`);
+        const result = await stageImportIntoRunningVm(srcPath, targetPath);
+        setDiskStatus(`imported to running VM (${formatBytes(result.size)}); current boot only`);
         setStatus("running (one-shot import applied)");
+        emitApiEvent("inject_ok", {
+          src: result.resolvedSource || srcPath,
+          dst: targetPath,
+          bytes: result.size,
+        });
         window.setTimeout(() => {
           requestRootWatchScan();
         }, 500);
@@ -554,6 +781,7 @@
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setDiskStatus(`import failed (${msg})`);
+      emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"));
       console.error(err);
     } finally {
       if (injectDiskFileBtn) {
@@ -780,6 +1008,59 @@
     return !!(emulator && emulator.is_running && emulator.is_running());
   }
 
+  function resolveVmStartedWaiters() {
+    if (vmStartedResolvers.length === 0) {
+      return;
+    }
+    const waiters = vmStartedResolvers.slice();
+    vmStartedResolvers = [];
+    for (const waiter of waiters) {
+      try {
+        waiter.resolve();
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+
+  function rejectVmStartedWaiters(error) {
+    if (vmStartedResolvers.length === 0) {
+      return;
+    }
+    const waiters = vmStartedResolvers.slice();
+    vmStartedResolvers = [];
+    for (const waiter of waiters) {
+      try {
+        waiter.reject(error);
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+
+  function waitForVmRunning(timeoutMs = startupTimeoutMs) {
+    if (hasRunningVm()) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        vmStartedResolvers = vmStartedResolvers.filter((entry) => entry !== waiter);
+        reject(Object.assign(new Error("VM startup timed out"), { code: "VM_START_TIMEOUT" }));
+      }, Math.max(1000, timeoutMs));
+      const waiter = {
+        resolve: () => {
+          window.clearTimeout(timeoutId);
+          resolve();
+        },
+        reject: (err) => {
+          window.clearTimeout(timeoutId);
+          reject(err);
+        }
+      };
+      vmStartedResolvers.push(waiter);
+    });
+  }
+
   function sendSerialBytes(bytes) {
     if (!serialEnabled || !bytes || bytes.length === 0) {
       return false;
@@ -821,6 +1102,20 @@
     }
   }
 
+  function emitRootFilesChanged(records, reason, force) {
+    const normalized = normalizeRootRecordList(records || []);
+    const signature = rootRecordListSignature(normalized);
+    if (!force && signature === lastRootRecordsSignature) {
+      return;
+    }
+    lastRootRecordsSignature = signature;
+    lastRootRecords = normalized;
+    emitApiEvent("root_files_changed", {
+      files: normalized,
+      reason: reason || "scan"
+    });
+  }
+
   function stopRootWatchPolling() {
     if (rootWatchTimer) {
       window.clearInterval(rootWatchTimer);
@@ -839,7 +1134,7 @@
     }, rootWatchIntervalMs());
   }
 
-  function requestRootWatchScan() {
+  function requestRootWatchScan(reason = "scan", forceEmit = false) {
     if (!hasRunningVm() || rootWatchPending || rootDownloadInFlight) {
       return;
     }
@@ -852,11 +1147,15 @@
     }
     rootWatchPending = true;
     try {
-      const names = listRootShareRegularFiles();
+      const records = listRootShareRecords();
+      const names = records
+        .filter((record) => record.kind === "file")
+        .map((record) => record.path.replace(/^\/root\//, ""));
       const nextSet = new Set(names);
       const newNames = names.filter((name) => !rootWatchKnownNames.has(name));
       rootWatchKnownNames = nextSet;
       renderRootWatchList(names, new Set(newNames));
+      emitRootFilesChanged(records, reason, forceEmit || newNames.length > 0);
       const now = new Date().toLocaleTimeString();
       if (newNames.length > 0) {
         setRootWatchStatus(`${names.length} entries (${newNames.length} new) @ ${now}`);
@@ -871,18 +1170,38 @@
     }
   }
 
-  function triggerBrowserDownload(bytes, filename) {
-    const blob = new Blob([bytes], { type: "application/octet-stream" });
+  function revokeIssuedDownloadUrl(url) {
+    if (!url || !issuedDownloadUrls.has(url)) {
+      return;
+    }
+    issuedDownloadUrls.delete(url);
+    try {
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  function createIssuedDownloadUrl(bytes) {
+    const blob = new Blob([bytes], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
+    issuedDownloadUrls.add(url);
+    window.setTimeout(() => {
+      revokeIssuedDownloadUrl(url);
+    }, 5 * 60 * 1000);
+    return url;
+  }
+
+  function triggerBrowserDownloadUrl(url, filename) {
+    if (!url) {
+      return;
+    }
     const link = document.createElement("a");
     link.href = url;
     link.download = filename || "root-file.bin";
     document.body.appendChild(link);
     link.click();
     link.remove();
-    window.setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 1000);
   }
 
   async function downloadEncryptedZip(name, bytes) {
@@ -900,8 +1219,50 @@
     }
     const zipBytes = new Uint8Array(await response.arrayBuffer());
     const outName = safeName.toLowerCase().endsWith(".zip") ? safeName : `${safeName}.zip`;
-    triggerBrowserDownload(zipBytes, outName);
-    return zipBytes.byteLength;
+    const downloadUrl = createIssuedDownloadUrl(zipBytes);
+    return {
+      zipSize: zipBytes.byteLength,
+      outName,
+      downloadUrl
+    };
+  }
+
+  async function readRootShareFile(path) {
+    if (!hasRunningVm()) {
+      throw Object.assign(new Error("VM not running"), { code: "VM_NOT_RUNNING" });
+    }
+    if (!hasFilesystemBridge()) {
+      throw Object.assign(new Error("filesystem bridge not ready"), { code: "FS_BRIDGE_NOT_READY" });
+    }
+    const normalizedPath = sanitizeRootPath(path);
+    const sharePath = normalizedPath.replace(/^\/root/, "");
+    const payload = await emulator.read_file(sharePath);
+    const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    return {
+      bytes,
+      normalizedPath,
+      name: basename(normalizedPath)
+    };
+  }
+
+  async function downloadRootShareFile(path, options = {}) {
+    const fileData = await readRootShareFile(path);
+    const zipResult = await downloadEncryptedZip(fileData.name, fileData.bytes);
+    const payload = {
+      path: fileData.normalizedPath,
+      name: fileData.name,
+      size: fileData.bytes.byteLength,
+      zip_size: zipResult.zipSize,
+      download_url: zipResult.downloadUrl,
+      filename: zipResult.outName,
+      sha256: null,
+      kind: "file"
+    };
+    emitApiEvent("download_done", payload);
+    if (options.triggerBrowserDownload === true) {
+      triggerBrowserDownloadUrl(zipResult.downloadUrl, zipResult.outName);
+    }
+    return payload;
   }
 
   async function requestRootFileDownload(name) {
@@ -920,15 +1281,13 @@
     rootDownloadInFlight = true;
     setRootWatchStatus(`downloading /root/${name} as encrypted zip...`);
     try {
-      const path = `/${name}`;
-      const payload = await emulator.read_file(path);
-      const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-      const zipSize = await downloadEncryptedZip(name || "root-file.bin", bytes);
-      setRootWatchStatus(`downloaded ${name} as zip (${formatBytes(zipSize)})`);
+      const result = await downloadRootShareFile(`/root/${name}`, { triggerBrowserDownload: true });
+      setRootWatchStatus(`downloaded ${name} as zip (${formatBytes(result.zip_size)})`);
       rootWatchStatusHoldUntil = Date.now() + 5000;
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setRootWatchStatus(`download failed (${msg})`);
+      emitApiError(err, { action: "download", path: `/root/${name}` });
       rootWatchStatusHoldUntil = Date.now() + 7000;
     } finally {
       rootDownloadInFlight = false;
@@ -1096,6 +1455,8 @@
       applyRootShareTotalSize();
       setStatus("running");
       startSampling();
+      resolveVmStartedWaiters();
+      emitApiEvent("vm_started", {});
       rootWatchKnownNames = new Set();
       if (rootWatchListEl) {
         rootWatchListEl.textContent = "";
@@ -1103,26 +1464,29 @@
       setRootWatchStatus(`monitoring /root every ${rootWatchIntervalMs() / 1000}s`);
       refreshRootWatchPolling();
       window.setTimeout(() => {
-        requestRootWatchScan();
+        requestRootWatchScan("vm_started", true);
       }, 1500);
     });
 
     emulator.add_listener("emulator-stopped", () => {
       setStatus("stopped");
       stopSampling();
+      rejectVmStartedWaiters(Object.assign(new Error("VM stopped"), { code: "VM_STOPPED" }));
+      emitApiEvent("vm_stopped", {});
       stopRootWatchPolling();
       rootWatchKnownNames = new Set();
       if (rootWatchListEl) {
         rootWatchListEl.textContent = "";
       }
       rootDownloadInFlight = false;
+      emitRootFilesChanged([], "vm_stopped", true);
       setRootWatchStatus("waiting for VM start...");
     });
 
     return emulator;
   }
 
-  async function startVm() {
+  async function startVm(options = {}) {
     try {
       await diskStateReady;
       if (!emulator) {
@@ -1136,6 +1500,9 @@
         await applyBootImportsToVm("boot-prestart");
       }
       await vm.run();
+      if (options.waitForRunning === true) {
+        await waitForVmRunning(options.timeoutMs || startupTimeoutMs);
+      }
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setStatus(`error (${msg})`);
@@ -1147,6 +1514,8 @@
       }
       // Surface to console for debugging.
       console.error(err);
+      emitApiError(err, { action: "start" });
+      throw err;
     }
   }
 
@@ -1154,18 +1523,147 @@
     if (!emulator) {
       return;
     }
-    await emulator.stop();
+    try {
+      await emulator.stop();
+    } catch (err) {
+      emitApiError(err, { action: "stop" });
+      throw err;
+    }
+  }
+
+  async function injectIntoRoot(payload = {}, options = {}) {
+    try {
+      if (!hasRunningVm()) {
+        throw Object.assign(new Error("VM not running"), { code: "VM_NOT_RUNNING" });
+      }
+      if (!hasFilesystemBridge()) {
+        throw Object.assign(new Error("filesystem bridge not ready"), { code: "FS_BRIDGE_NOT_READY" });
+      }
+      const src = normalizeServerSourcePath(payload.src || "", {
+        allowCrossOrigin: options.allowCrossOrigin === true ? true : false
+      });
+      const sourceName = basename(src) || "autoload.bin";
+      const requestedDst = String(payload.dst || "").trim();
+      const dst = options.autoloadMode === true
+        ? sanitizeAutoloadDst(requestedDst || `/root/${sourceName}`)
+        : sanitizeRootPath(requestedDst || `/root/${sourceName}`);
+      const overwrite = payload.overwrite !== false;
+      const result = await stageImportIntoRunningVm(src, dst, { overwrite });
+      const out = {
+        src: result.resolvedSource || src,
+        dst,
+        bytes: result.size,
+        overwrite
+      };
+      emitApiEvent("inject_ok", out);
+      window.setTimeout(() => {
+        requestRootWatchScan("inject", true);
+      }, 200);
+      return out;
+    } catch (err) {
+      emitApiEvent("inject_error", toApiErrorPayload(err, "INJECT_FAILED"));
+      throw err;
+    }
+  }
+
+  async function runAutoloadFromQuery() {
+    const hasAutoloadSrc = typeof embedConfig.autoloadSrc === "string" && embedConfig.autoloadSrc.length > 0;
+    if (!hasAutoloadSrc) {
+      return;
+    }
+    try {
+      const src = normalizeServerSourcePath(embedConfig.autoloadSrc, { allowCrossOrigin: false });
+      const dst = sanitizeAutoloadDst(embedConfig.autoloadDst || `/root/${basename(src)}`);
+      if (embedConfig.autostart) {
+        await startVm({ waitForRunning: true, timeoutMs: autoloadTimeoutMs });
+      } else {
+        await waitForVmRunning(autoloadTimeoutMs);
+      }
+      await injectIntoRoot({ src, dst, overwrite: true }, { autoloadMode: true, allowCrossOrigin: false });
+    } catch (err) {
+      const payload = emitApiError(err, { action: "autoload" });
+      setStatus(`error (${payload.message})`);
+    }
+  }
+
+  async function handleApiCommand(command, payload) {
+    switch (command) {
+      case "start":
+        await startVm({ waitForRunning: true, timeoutMs: startupTimeoutMs });
+        return {};
+      case "stop":
+        await stopVm();
+        return {};
+      case "inject":
+        return await injectIntoRoot(payload || {}, { allowCrossOrigin: false });
+      case "list_root": {
+        const files = hasRunningVm() ? listRootShareRecords() : [];
+        emitRootFilesChanged(files, "list_root", true);
+        return { files };
+      }
+      case "download": {
+        const path = payload && payload.path ? payload.path : "";
+        const result = await downloadRootShareFile(path, { triggerBrowserDownload: false });
+        return result;
+      }
+      default:
+        throw Object.assign(new Error(`unsupported command: ${command}`), { code: "COMMAND_UNSUPPORTED" });
+    }
+  }
+
+  function handleParentMessage(event) {
+    if (!postMessageEnabled) {
+      return;
+    }
+    let envelope;
+    try {
+      envelope = validateCommandEnvelope(event.data);
+    } catch (err) {
+      const payload = toApiErrorPayload(
+        Object.assign(new Error(err && err.message ? err.message : "malformed command envelope"), {
+          code: "ENVELOPE_INVALID"
+        }),
+        "ENVELOPE_INVALID"
+      );
+      emitApiEvent("error", payload);
+      return;
+    }
+    if (!isAllowedOrigin(event.origin, allowedParentOrigins)) {
+      const denied = toApiErrorPayload(
+        Object.assign(new Error("origin is not allowed"), { code: "ORIGIN_DENIED", details: { origin: event.origin } }),
+        "ORIGIN_DENIED"
+      );
+      sendApiResponse(event.source, event.origin, envelope.id, false, null, denied);
+      emitApiEvent("error", denied);
+      return;
+    }
+    defaultEventTargetOrigin = event.origin;
+    rememberParentChannel(event.source, event.origin);
+    void (async () => {
+      try {
+        const result = await handleApiCommand(envelope.command, envelope.payload);
+        sendApiResponse(event.source, event.origin, envelope.id, true, result, null);
+      } catch (err) {
+        const errPayload = toApiErrorPayload(err, "COMMAND_FAILED");
+        sendApiResponse(event.source, event.origin, envelope.id, false, null, errPayload);
+        emitApiEvent("error", errPayload);
+      }
+    })();
+  }
+
+  if (postMessageEnabled) {
+    global.addEventListener("message", handleParentMessage);
   }
 
   if (startBtn) {
     startBtn.addEventListener("click", () => {
-      void startVm();
+      void startVm().catch(() => {});
     });
   }
 
   if (stopBtn) {
     stopBtn.addEventListener("click", () => {
-      void stopVm();
+      void stopVm().catch(() => {});
     });
   }
 
@@ -1185,7 +1683,7 @@
       }
       const current = injectDiskPathEl.value.trim();
       if (current.length === 0) {
-        const sourceName = src.split("/").filter(Boolean).pop() || "server-file.bin";
+        const sourceName = basename(src) || "server-file.bin";
         injectDiskPathEl.value = `/root/${sourceName}`;
       }
     });
@@ -1203,6 +1701,10 @@
 
   if (!serialEnabled && serialPanelEl) {
     serialPanelEl.style.display = "none";
+    if (embedMode) {
+      const err = Object.assign(new Error("embed mode requires serial console"), { code: "EMBED_SERIAL_REQUIRED" });
+      emitApiError(err, { action: "embed_init" });
+    }
   } else if (serialEnabled) {
     if (serialHintEl) {
       if (!serialUseXterm) {
@@ -1228,11 +1730,28 @@
   });
 
   setStatus("idle");
+  emitApiEvent("ready", {
+    api_version: API_VERSION,
+    capabilities: API_CAPABILITIES.slice()
+  });
+
+  if (embedConfig.autoloadSrc) {
+    void runAutoloadFromQuery();
+  } else if (embedConfig.autostart) {
+    void startVm({ waitForRunning: true, timeoutMs: startupTimeoutMs }).catch((err) => {
+      emitApiError(err, { action: "autostart" });
+    });
+  }
+
   return {
     config,
+    embedMode,
+    apiVersion: API_VERSION,
+    capabilities: API_CAPABILITIES.slice(),
     elements: {
       pageTitleEl,
       statusEl,
+      embedStatusBarEl,
       ipsEl,
       serialPanelEl,
       serialHintEl,
@@ -1257,6 +1776,11 @@
     },
     start: startVm,
     stop: stopVm,
+    inject: injectIntoRoot,
+    listRoot() {
+      return hasRunningVm() ? listRootShareRecords() : [];
+    },
+    download: downloadRootShareFile,
     ensureEmulator,
     getEmulator() {
       return emulator;

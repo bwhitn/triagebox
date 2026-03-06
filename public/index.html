@@ -39,6 +39,7 @@
           <h2>Serial Console</h2>
         </div>
         <p id="serial-hint">Click inside the serial console and type to interact with the guest shell.</p>
+        <div id="embed-status-bar" class="embed-status-bar" aria-live="polite"></div>
         <div id="serial-xterm-wrap">
           <div id="serial-xterm"></div>
         </div>
@@ -60,6 +61,7 @@
 
     <script src="assets/xterm/xterm.js"></script>
     <script src="assets/xterm/xterm-addon-fit.js"></script>
+    <script src="embed-common.js"></script>
     <script src="vm-config.js"></script>
     <script src="build-config.js"></script>
     <script>

@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: build build-resume build-fast build-kernel-fast preflight fetch-v86 build-v86-min use-v86-stock use-v86-min build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve release-package show-version set-version clean
+.PHONY: build build-resume build-fast build-kernel-fast preflight fetch-v86 build-v86-min use-v86-stock use-v86-min build-disk build-disk-resume build-kernel build-kernel-resume write-build-config disk-usage shrink-disk audit-runtime serve server docker-serve release-package show-version set-version test clean
 
 build: fetch-v86 build-disk
 
@@ -76,6 +76,9 @@ show-version:
 set-version:
 	@test -n "$(VERSION)" || (echo "Usage: make set-version VERSION=v0.0.0" >&2; exit 1)
 	./scripts/set-version.sh "$(VERSION)"
+
+test:
+	node --test tests/*.test.js
 
 clean:
 	rm -rf .work
