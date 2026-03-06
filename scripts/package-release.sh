@@ -70,7 +70,11 @@ fi
 if [[ -d "${RUNTIME_PUBLIC_DIR}/assets" ]]; then
     while IFS= read -r -d '' image_file; do
         rel_path="${image_file#${RUNTIME_PUBLIC_DIR}/}"
+        base_name="$(basename "${image_file}")"
         if [[ -n "${ACTIVE_DISK_IMAGE}" ]] && [[ "${rel_path}" == "${ACTIVE_DISK_IMAGE}" ]]; then
+            continue
+        fi
+        if [[ "${base_name}" == "initrd.img" ]]; then
             continue
         fi
         rm -f "${image_file}"
